@@ -8,31 +8,39 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend"
+	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/gateway"
+	"github.com/moby/buildkit/frontend/gateway/forwarder"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/worker"
 	digest "github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
 const buildCacheType = "buildkit.build.v0"
 
 type buildOp struct {
-	op *pb.BuildOp
-	b  frontend.FrontendLLBBridge
-	v  solver.Vertex
+	op        *pb.BuildOp
+	llbBridge frontend.FrontendLLBBridge
+	v         solver.Vertex
+	w         worker.Worker
+	wi        frontend.WorkerInfos
 }
 
-func NewBuildOp(v solver.Vertex, op *pb.Op_Build, b frontend.FrontendLLBBridge, _ worker.Worker) (solver.Op, error) {
+func NewBuildOp(v solver.Vertex, op *pb.Op_Build, b frontend.FrontendLLBBridge, w worker.Worker, wi frontend.WorkerInfos) (solver.Op, error) {
 	if err := llbsolver.ValidateOp(&pb.Op{Op: op}); err != nil {
 		return nil, err
 	}
 	return &buildOp{
-		op: op.Build,
-		b:  b,
-		v:  v,
+		op:        op.Build,
+		llbBridge: b,
+		v:         v,
+		w:         w,
+		wi:        wi,
 	}, nil
 }
 
@@ -58,10 +66,20 @@ func (b *buildOp) CacheMap(ctx context.Context, index int) (*solver.CacheMap, bo
 }
 
 func (b *buildOp) Exec(ctx context.Context, inputs []solver.Result) (outputs []solver.Result, retErr error) {
-	if b.op.Builder != pb.LLBBuilder {
-		return nil, errors.Errorf("only LLB builder is currently allowed")
+	if b.op.Builder == pb.LLBBuilder {
+		return b.buildWithLLB(ctx, inputs)
 	}
+	switch b.op.Frontend {
+	case "gateway.v0":
+		return b.buildWithGateway(ctx, inputs)
+	case "dockerfile.v0":
+		return b.buildWithDockerfile(ctx, inputs)
+	default:
+		return nil, errors.Errorf("unsupported frontend %q", b.op.Frontend)
+	}
+}
 
+func (b *buildOp) buildWithLLB(ctx context.Context, inputs []solver.Result) (outputs []solver.Result, retErr error) {
 	builderInputs := b.op.Inputs
 	llbDef, ok := builderInputs[pb.LLBDefinitionInput]
 	if !ok {
@@ -121,21 +139,72 @@ func (b *buildOp) Exec(ctx context.Context, inputs []solver.Result) (outputs []s
 	lm.Unmount()
 	lm = nil
 
-	newRes, err := b.b.Solve(ctx, frontend.SolveRequest{
+	proxy, err := b.llbBridge.Solve(ctx, frontend.SolveRequest{
 		Definition: def.ToPB(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	for _, r := range newRes.Refs {
+	for _, r := range proxy.Refs {
 		r.Release(context.TODO())
 	}
 
-	r, err := newRes.Ref.Result(ctx)
+	res, err := proxy.Ref.Result(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return []solver.Result{r}, err
+	return []solver.Result{res}, err
+}
+
+func (b *buildOp) buildWithGateway(ctx context.Context, inputs []solver.Result) (outputs []solver.Result, retErr error) {
+	builderInput := inputs[b.op.Builder]
+
+	wref, ok := builderInput.Sys().(*worker.WorkerRef)
+	if !ok {
+		return nil, errors.Errorf("invalid reference for build %T", builderInput.Sys())
+	}
+	rootFS := wref.ImmutableRef
+
+	cfg := specs.ImageConfig{
+		Entrypoint: b.op.Meta.Args,
+		Env:        b.op.Meta.Env,
+		WorkingDir: b.op.Meta.Cwd,
+	}
+
+	proxy, err := gateway.ExecWithFrontend(ctx, b.llbBridge, b.wi, rootFS, cfg, b.op.Attrs, b.op.Defs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range proxy.Refs {
+		r.Release(context.TODO())
+	}
+
+	res, err := proxy.Ref.Result(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return []solver.Result{res}, nil
+}
+
+func (b *buildOp) buildWithDockerfile(ctx context.Context, inputs []solver.Result) (outputs []solver.Result, retErr error) {
+	frontend := forwarder.NewGatewayForwarder(b.wi, dockerfile.Build)
+	proxy, err := frontend.Solve(ctx, b.llbBridge, b.op.Attrs, b.op.Defs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range proxy.Refs {
+		r.Release(context.TODO())
+	}
+
+	res, err := proxy.Ref.Result(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return []solver.Result{res}, nil
 }

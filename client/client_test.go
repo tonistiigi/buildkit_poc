@@ -34,6 +34,7 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/session/sshforward/sshprovider"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/contentutil"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/testutil"
@@ -101,6 +102,7 @@ func TestIntegration(t *testing.T) {
 		testNetworkMode,
 		testFrontendMetadataReturn,
 		testFrontendUseSolveResults,
+		testNestedLLBBuild,
 		testSSHMount,
 		testStdinClosed,
 		testHostnameLookup,
@@ -1582,6 +1584,58 @@ func testFrontendUseSolveResults(t *testing.T, sb integration.Sandbox) {
 	require.NoError(t, err)
 
 	dt, err := ioutil.ReadFile(filepath.Join(destDir, "foo2"))
+	require.NoError(t, err)
+	require.Equal(t, dt, []byte("data"))
+}
+
+func testNestedLLBBuild(t *testing.T, sb integration.Sandbox) {
+	requiresLinux(t)
+	c, err := New(context.TODO(), sb.Address())
+	require.NoError(t, err)
+	defer c.Close()
+
+	st := llb.Scratch().File(
+		llb.Mkfile("foo", 0600, []byte("data")),
+	)
+
+	def, err := st.Marshal(ctx)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	err = llb.WriteTo(def, &buf)
+	require.NoError(t, err)
+
+	frontend := func(ctx context.Context, c gateway.Client) (*gateway.Result, error) {
+		st := llb.Scratch().File(
+			llb.Mkfile(pb.LLBDefinitionInput, 0600, buf.Bytes()),
+		)
+
+		st = llb.Build(st)
+		def, err := st.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return c.Solve(ctx, gateway.SolveRequest{
+			Definition: def.ToPB(),
+		})
+	}
+
+	destDir, err := ioutil.TempDir("", "buildkit")
+	require.NoError(t, err)
+	defer os.RemoveAll(destDir)
+
+	_, err = c.Build(context.TODO(), SolveOpt{
+		Exports: []ExportEntry{
+			{
+				Type:      ExporterLocal,
+				OutputDir: destDir,
+			},
+		},
+	}, "", frontend, nil)
+	require.NoError(t, err)
+
+	dt, err := ioutil.ReadFile(filepath.Join(destDir, "foo"))
 	require.NoError(t, err)
 	require.Equal(t, dt, []byte("data"))
 }

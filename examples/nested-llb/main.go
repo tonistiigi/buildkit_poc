@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/client/llb/llbbuild"
 	"github.com/moby/buildkit/util/system"
 )
 
@@ -22,7 +21,7 @@ func main() {
 	build.AddMount("/go/src/"+buildkitRepo, llb.Git(buildkitRepo, "master"))
 	pb := build.AddMount("/out", llb.Scratch())
 
-	built := pb.With(llbbuild.Build())
+	built := llb.Build(pb)
 
 	dt, err := llb.Image("docker.io/library/alpine:latest").Run(llb.Shlex("ls -l /out"), llb.AddMount("/out", built, llb.Readonly)).Marshal(context.TODO(), llb.LinuxAmd64)
 	if err != nil {

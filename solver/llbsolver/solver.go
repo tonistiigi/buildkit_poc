@@ -81,7 +81,7 @@ func (s *Solver) resolver() solver.ResolveOpFunc {
 		if err != nil {
 			return nil, err
 		}
-		return w.ResolveOp(v, s.Bridge(b), s.sm)
+		return w.ResolveOp(v, s.Bridge(b), s.sm, s.workerController)
 	}
 }
 

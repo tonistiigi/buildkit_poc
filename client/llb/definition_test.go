@@ -23,6 +23,10 @@ func TestDefinitionEquivalence(t *testing.T) {
 		{"file op", Scratch().File(Mkdir("foo", 0600).Mkfile("foo/bar", 0600, []byte("data")).Copy(Scratch(), "src", "dst"))},
 		{"platform constraint", Image("ref", LinuxArm64)},
 		{"mount", Image("busybox").Run(Shlex(`sh -c "echo foo > /out/foo"`)).AddMount("/out", Scratch())},
+		{"frontend scratch op", Frontend(Scratch())},
+		{"frontend op", Frontend(Image("ref"), WithFrontendInput("key", Git("remote", "ref")), WithFrontendOpt("key", "value"))},
+		{"build scratch op", Build(Scratch())},
+		{"build op", Build(Image("ref"), WithFilename("filename"))},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {

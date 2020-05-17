@@ -100,6 +100,7 @@ var allTests = []integration.Test{
 	testOnBuildCleared,
 	testFrontendUseForwardedSolveResults,
 	testFrontendInputs,
+	testNestedDockerfileBuild,
 }
 
 var fileOpTests = []integration.Test{
@@ -140,6 +141,8 @@ type frontend interface {
 	RequiresBuildctl(t *testing.T)
 }
 
+var dockerfileFrontend string
+
 func init() {
 	frontends := map[string]interface{}{}
 
@@ -161,6 +164,7 @@ func init() {
 			name: gw,
 		}))
 		frontends["gateway"] = &gatewayFrontend{gw: name}
+		dockerfileFrontend = name
 	} else {
 		frontends["builtin"] = &builtinFrontend{}
 		frontends["client"] = &clientFrontend{}
@@ -4602,6 +4606,82 @@ COPY foo foo2
 	require.Equal(t, expected, actual)
 }
 
+func testNestedDockerfileBuild(t *testing.T, sb integration.Sandbox) {
+	gw := os.Getenv("FRONTEND_GATEWAY_ONLY")
+	if gw == "" {
+		t.Skip()
+	}
+
+	c, err := client.New(context.TODO(), sb.Address())
+	require.NoError(t, err)
+	defer c.Close()
+
+	dockerfile := []byte(`
+FROM scratch
+COPY foo foo2
+`)
+	frontend := func(ctx context.Context, c gateway.Client) (*gateway.Result, error) {
+		st := llb.Dockerfile(
+			llb.WithFrontendInput(builder.DefaultLocalNameContext, llb.Scratch().File(
+				llb.Mkfile("foo", 0600, []byte("data")),
+			)),
+			llb.WithFrontendInput(builder.DefaultLocalNameDockerfile, llb.Scratch().File(
+				llb.Mkfile("Dockerfile", 0600, dockerfile),
+			)),
+		)
+		def, err := st.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := c.Solve(ctx, gateway.SolveRequest{
+			Definition: def.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		st2, err := ref.ToState()
+		if err != nil {
+			return nil, err
+		}
+
+		st3 := llb.Scratch().File(
+			llb.Copy(st2, "foo2", "foo3"),
+		)
+
+		finalDef, err := st3.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return c.Solve(ctx, gateway.SolveRequest{
+			Definition: finalDef.ToPB(),
+		})
+	}
+
+	destDir, err := ioutil.TempDir("", "buildkit")
+	require.NoError(t, err)
+
+	_, err = c.Build(context.TODO(), client.SolveOpt{
+		Exports: []client.ExportEntry{
+			{
+				Type:      client.ExporterLocal,
+				OutputDir: destDir,
+			},
+		},
+	}, "", frontend, nil)
+	require.NoError(t, err)
+
+	dt, err := ioutil.ReadFile(filepath.Join(destDir, "foo3"))
+	require.NoError(t, err)
+	require.Equal(t, dt, []byte("data"))
+}
 func tmpdir(appliers ...fstest.Applier) (string, error) {
 	tmpdir, err := ioutil.TempDir("", "buildkit-dockerfile")
 	if err != nil {

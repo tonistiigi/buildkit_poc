@@ -154,9 +154,17 @@ message SourceOp {
 message BuildOp {
 	int64 builder = 1 [(gogoproto.customtype) = "InputIndex", (gogoproto.nullable) = false];
 	map<string, BuildInput> inputs = 2;
-	Definition def = 3;
-	map<string, string> attrs = 4;
-	// outputs
+	map<string, string> attrs = 3;
+	string frontend = 4;
+	FrontendMeta meta = 5;
+	map<string, pb.Definition> defs = 6;
+}
+
+// FrontendMeta is a set of arguments for nested frontends.
+message FrontendMeta {
+	repeated string args = 1;
+	repeated string env = 2;
+	string cwd = 3;
 }
 
 // BuildInput is used for BuildOp.

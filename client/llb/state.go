@@ -213,13 +213,7 @@ func (s State) WithOutput(o Output) State {
 }
 
 func (s State) WithImageConfig(c []byte) (State, error) {
-	var img struct {
-		Config struct {
-			Env        []string `json:"Env,omitempty"`
-			WorkingDir string   `json:"WorkingDir,omitempty"`
-			User       string   `json:"User,omitempty"`
-		} `json:"config,omitempty"`
-	}
+	var img specs.Image
 	if err := json.Unmarshal(c, &img); err != nil {
 		return State{}, err
 	}
@@ -234,6 +228,7 @@ func (s State) WithImageConfig(c []byte) (State, error) {
 		}
 	}
 	s = s.Dir(img.Config.WorkingDir)
+	s = args(img.Config.Entrypoint...)(s)
 	return s, nil
 }
 
@@ -415,6 +410,14 @@ func (fn constraintsOptFunc) SetImageOption(ii *ImageInfo) {
 
 func (fn constraintsOptFunc) SetGitOption(gi *GitInfo) {
 	gi.applyConstraints(fn)
+}
+
+func (fn constraintsOptFunc) SetBuildOption(bi *BuildInfo) {
+	bi.applyConstraints(fn)
+}
+
+func (fn constraintsOptFunc) SetFrontendOption(fi *FrontendInfo) {
+	fi.applyConstraints(fn)
 }
 
 func mergeMetadata(m1, m2 pb.OpMetadata) pb.OpMetadata {

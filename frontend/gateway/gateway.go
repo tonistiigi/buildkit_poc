@@ -79,7 +79,6 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 	_, isDevel := opts[keyDevel]
 	var img specs.Image
 	var rootFS cache.ImmutableRef
-	var readonly bool // TODO: try to switch to read-only by default.
 
 	if isDevel {
 		devRes, err := llbBridge.Solve(session.NewContext(ctx, "gateway:"+sid),
@@ -169,7 +168,11 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 		rootFS = workerRef.ImmutableRef
 	}
 
-	lbf, ctx, err := newLLBBridgeForwarder(ctx, llbBridge, gf.workers, inputs)
+	return ExecWithFrontend(ctx, llbBridge, gf.workers, rootFS, img.Config, opts, inputs)
+}
+
+func ExecWithFrontend(ctx context.Context, llbBridge frontend.FrontendLLBBridge, wi frontend.WorkerInfos, rootFS cache.ImmutableRef, cfg specs.ImageConfig, opts map[string]string, inputs map[string]*opspb.Definition) (*frontend.Result, error) {
+	lbf, ctx, err := newLLBBridgeForwarder(ctx, llbBridge, wi, inputs)
 	defer lbf.conn.Close()
 	if err != nil {
 		return nil, err
@@ -178,24 +181,26 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 	args := []string{"/run"}
 	env := []string{}
 	cwd := "/"
-	if img.Config.Env != nil {
-		env = img.Config.Env
+	if cfg.Env != nil {
+		env = cfg.Env
 	}
-	if img.Config.Entrypoint != nil {
-		args = img.Config.Entrypoint
+	if cfg.Entrypoint != nil {
+		args = cfg.Entrypoint
 	}
-	if img.Config.WorkingDir != "" {
-		cwd = img.Config.WorkingDir
+	if cfg.WorkingDir != "" {
+		cwd = cfg.WorkingDir
 	}
+
 	i := 0
 	for k, v := range opts {
 		env = append(env, fmt.Sprintf("BUILDKIT_FRONTEND_OPT_%d", i)+"="+k+"="+v)
 		i++
 	}
 
+	sid := session.FromContext(ctx)
 	env = append(env, "BUILDKIT_SESSION_ID="+sid)
 
-	dt, err := json.Marshal(gf.workers.WorkerInfos())
+	dt, err := json.Marshal(wi.WorkerInfos())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal workers array")
 	}
@@ -205,6 +210,7 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 
 	env = append(env, "BUILDKIT_EXPORTEDPRODUCT="+apicaps.ExportedProduct)
 
+	var readonly bool // TODO: try to switch to read-only by default.
 	meta := executor.Meta{
 		Env:            env,
 		Args:           args,
@@ -212,14 +218,13 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 		ReadonlyRootFS: readonly,
 	}
 
-	if v, ok := img.Config.Labels["moby.buildkit.frontend.network.none"]; ok {
+	if v, ok := cfg.Labels["moby.buildkit.frontend.network.none"]; ok {
 		if ok, _ := strconv.ParseBool(v); ok {
 			meta.NetMode = opspb.NetMode_NONE
 		}
 	}
 
 	err = llbBridge.Exec(ctx, meta, rootFS, lbf.Stdin, lbf.Stdout, os.Stderr)
-
 	if err != nil {
 		if errors.Is(err, context.Canceled) && lbf.isErrServerClosed {
 			err = errors.Errorf("frontend grpc server closed unexpectedly")

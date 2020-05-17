@@ -229,7 +229,7 @@ func (w *Worker) LoadRef(id string, hidden bool) (cache.ImmutableRef, error) {
 	return w.CacheManager.Get(context.TODO(), id, opts...)
 }
 
-func (w *Worker) ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error) {
+func (w *Worker) ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager, wi frontend.WorkerInfos) (solver.Op, error) {
 	if baseOp, ok := v.Sys().(*pb.Op); ok {
 		switch op := baseOp.Op.(type) {
 		case *pb.Op_Source:
@@ -239,7 +239,7 @@ func (w *Worker) ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *se
 		case *pb.Op_File:
 			return ops.NewFileOp(v, op, w.CacheManager, w.MetadataStore, w)
 		case *pb.Op_Build:
-			return ops.NewBuildOp(v, op, s, w)
+			return ops.NewBuildOp(v, op, s, w, wi)
 		default:
 			return nil, errors.Errorf("no support for %T", op)
 		}

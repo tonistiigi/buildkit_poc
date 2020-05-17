@@ -56,6 +56,12 @@ const (
 	CapMetaIgnoreCache apicaps.CapID = "meta.ignorecache"
 	CapMetaDescription apicaps.CapID = "meta.description"
 	CapMetaExportCache apicaps.CapID = "meta.exportcache"
+
+	// CapBuildFrontend is a capability to solve BuildOps leveraging an
+	// external builder. This allows usage of the client function llb.Gateway
+	// or llb.Dockerfile to create a vertex representing the result returned
+	// by a frontend image.
+	CapBuildFrontend apicaps.CapID = "build.frontend"
 )
 
 func init() {
@@ -293,6 +299,12 @@ func init() {
 
 	Caps.Init(apicaps.Cap{
 		ID:      CapMetaExportCache,
+		Enabled: true,
+		Status:  apicaps.CapStatusExperimental,
+	})
+
+	Caps.Init(apicaps.Cap{
+		ID:      CapBuildFrontend,
 		Enabled: true,
 		Status:  apicaps.CapStatusExperimental,
 	})

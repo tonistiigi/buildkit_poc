@@ -26,7 +26,7 @@ type Worker interface {
 	GCPolicy() []client.PruneInfo
 	LoadRef(id string, hidden bool) (cache.ImmutableRef, error)
 	// ResolveOp resolves Vertex.Sys() to Op implementation.
-	ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error)
+	ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager, wi frontend.WorkerInfos) (solver.Op, error)
 	ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt, sm *session.Manager) (digest.Digest, []byte, error)
 	// Exec is similar to executor.Exec but without []mount.Mount
 	Exec(ctx context.Context, meta executor.Meta, rootFS cache.ImmutableRef, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error
