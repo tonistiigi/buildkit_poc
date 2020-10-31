@@ -10,37 +10,42 @@ import (
 	"os"
 	"time"
 
+	"github.com/docker/docker/client"
+	"github.com/moby/buildkit/util/testutil/dockerd"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/docker/docker/testutil/daemon"
 )
 
-const dockerdBinary = "dockerd"
-
-type logTAdapter struct {
+type testLogger struct {
 	Name string
 	Logs map[string]*bytes.Buffer
 }
 
-func (l logTAdapter) Logf(format string, v ...interface{}) {
+func (l testLogger) Logf(format string, v ...interface{}) {
 	if buf, ok := l.Logs[l.Name]; !ok || buf == nil {
 		l.Logs[l.Name] = &bytes.Buffer{}
 	}
 	fmt.Fprintf(l.Logs[l.Name], format, v...)
 }
 
-// InitDockerdWorker registers a dockerd worker with the global registry.
-func InitDockerdWorker() {
-	Register(&dockerd{})
+func withTestLogger(name string, logs map[string]*bytes.Buffer) dockerd.Option {
+	return func(d *dockerd.Daemon) {
+		d.Log = testLogger{Name: name, Logs: logs}
+	}
 }
 
-type dockerd struct{}
+// InitDockerdWorker registers a dockerd worker with the global registry.
+func InitDockerdWorker() {
+	Register(&dockerdWorker{})
+}
 
-func (c dockerd) Name() string {
+type dockerdWorker struct{}
+
+func (c dockerdWorker) Name() string {
+	const dockerdBinary = "dockerd"
 	return dockerdBinary
 }
 
-func (c dockerd) New(cfg *BackendConfig) (b Backend, cl func() error, err error) {
+func (c dockerdWorker) New(cfg *BackendConfig) (b Backend, cl func() error, err error) {
 	if err := requireRoot(); err != nil {
 		return nil, nil, err
 	}
@@ -63,33 +68,29 @@ func (c dockerd) New(cfg *BackendConfig) (b Backend, cl func() error, err error)
 		return nil, nil, err
 	}
 
-	cmd, err := daemon.NewDaemon(
+	d, err := dockerd.NewDaemon(
 		workDir,
-		daemon.WithTestLogger(logTAdapter{
-			Name: "creatingDaemon",
-			Logs: cfg.Logs,
-		}),
-		daemon.WithContainerdSocket(""),
+		withTestLogger("creatingDaemon", cfg.Logs),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new daemon error: %q, %s", err, formatLogs(cfg.Logs))
 	}
 
-	err = cmd.StartWithError()
+	err = d.StartWithError()
 	if err != nil {
 		return nil, nil, err
 	}
-	deferF.append(cmd.StopWithError)
+	deferF.append(d.StopWithError)
 
 	logs := map[string]*bytes.Buffer{}
-	if err := waitUnix(cmd.Sock(), 5*time.Second); err != nil {
+	if err := waitUnix(d.Sock(), 5*time.Second); err != nil {
 		return nil, nil, fmt.Errorf("dockerd did not start up: %q, %s", err, formatLogs(logs))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	deferF.append(func() error { cancel(); return nil })
 
-	dockerAPI, err := cmd.NewClient()
+	dockerAPI, err := client.NewClientWithOpts(client.FromEnv, client.WithHost(d.Sock()))
 	if err != nil {
 		return nil, nil, err
 	}
