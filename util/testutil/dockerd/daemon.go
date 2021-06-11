@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/go-connections/sockets"
+	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
 )
 
@@ -25,7 +25,10 @@ type nopLog struct{}
 
 func (nopLog) Logf(string, ...interface{}) {}
 
-const defaultDockerdBinary = "dockerd"
+const (
+	shortLen             = 12
+	defaultDockerdBinary = "dockerd"
+)
 
 // Option is used to configure a daemon.
 type Option func(*Daemon)
@@ -64,7 +67,7 @@ func NewDaemon(workingDir string, ops ...Option) (*Daemon, error) {
 		return nil, errors.Wrapf(err, "failed to create daemon socket root %q", sockRoot)
 	}
 
-	id := "d" + stringid.TruncateID(stringid.GenerateRandomID())
+	id := "d" + identity.NewID()[:shortLen]
 	daemonFolder, err := filepath.Abs(filepath.Join(workingDir, id))
 	if err != nil {
 		return nil, err
