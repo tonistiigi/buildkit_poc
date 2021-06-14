@@ -1,7 +1,6 @@
 package dockerd
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"os/exec"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/go-connections/sockets"
 	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
 )
@@ -177,59 +175,8 @@ func (d *Daemon) StartWithLogFile(out *os.File, providedArgs ...string) error {
 
 	d.Wait = wait
 
-	clientConfig, err := d.getClientConfig()
-	if err != nil {
-		return err
-	}
-	httpClient := &http.Client{
-		Transport: clientConfig.transport,
-	}
-
-	req, err := http.NewRequest(http.MethodGet, "/_ping", nil)
-	if err != nil {
-		return errors.Wrapf(err, "[%s] could not create new request", d.id)
-	}
-	req.URL.Host = clientConfig.addr
-	req.URL.Scheme = clientConfig.scheme
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	// make sure daemon is ready to receive requests
-	for i := 0; ; i++ {
-		d.Log.Logf("[%s] waiting for daemon to start", d.id)
-
-		select {
-		case <-ctx.Done():
-			return errors.Wrapf(ctx.Err(), "[%s] daemon exited and never started", d.id)
-		case err := <-d.Wait:
-			return errors.Wrapf(err, "[%s] daemon exited during startup", d.id)
-		default:
-			rctx, rcancel := context.WithTimeout(context.TODO(), 2*time.Second)
-			defer rcancel()
-
-			resp, err := httpClient.Do(req.WithContext(rctx))
-			if err != nil {
-				if i > 2 { // don't log the first couple, this ends up just being noise
-					d.Log.Logf("[%s] error pinging daemon on start: %v", d.id, err)
-				}
-
-				select {
-				case <-ctx.Done():
-				case <-time.After(500 * time.Millisecond):
-				}
-				continue
-			}
-
-			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				d.Log.Logf("[%s] received status != 200 OK: %s\n", d.id, resp.Status)
-				return errors.Errorf("[%s] received status != 200 OK: %s\n", d.id, resp.Status)
-			}
-			d.Log.Logf("[%s] daemon started\n", d.id)
-			return nil
-		}
-	}
+	d.Log.Logf("[%s] daemon started\n", d.id)
+	return nil
 }
 
 var errDaemonNotStarted = errors.New("daemon not started")
@@ -307,22 +254,4 @@ out2:
 	}
 
 	return nil
-}
-
-func (d *Daemon) getClientConfig() (*clientConfig, error) {
-	var (
-		transport = &http.Transport{}
-		scheme    = "http"
-		addr      = d.sockPath
-		proto     = "unix"
-	)
-	if err := sockets.ConfigureTransport(transport, proto, addr); err != nil {
-		return nil, err
-	}
-	transport.DisableKeepAlives = true
-	return &clientConfig{
-		transport: transport,
-		scheme:    scheme,
-		addr:      filepath.Base(addr),
-	}, nil
 }
