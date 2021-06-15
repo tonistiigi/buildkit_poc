@@ -22,7 +22,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func detectDirDiff(upper, lower string) *diffDirOptions {
+func detectDirDiff(upper, lower string) *DiffDirOptions {
 	return nil
 }
 

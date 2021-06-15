@@ -3,19 +3,21 @@ github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
-# github.com/Microsoft/go-winio v0.4.17
+# github.com/Microsoft/go-winio v0.5.0
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/backuptar
 github.com/Microsoft/go-winio/pkg/guid
 github.com/Microsoft/go-winio/pkg/security
 github.com/Microsoft/go-winio/vhd
-# github.com/Microsoft/hcsshim v0.8.16
+# github.com/Microsoft/hcsshim v0.8.17
 github.com/Microsoft/hcsshim
 github.com/Microsoft/hcsshim/computestorage
 github.com/Microsoft/hcsshim/hcn
 github.com/Microsoft/hcsshim/internal/cni
 github.com/Microsoft/hcsshim/internal/cow
 github.com/Microsoft/hcsshim/internal/hcs
+github.com/Microsoft/hcsshim/internal/hcs/schema1
+github.com/Microsoft/hcsshim/internal/hcs/schema2
 github.com/Microsoft/hcsshim/internal/hcserror
 github.com/Microsoft/hcsshim/internal/hns
 github.com/Microsoft/hcsshim/internal/interop
@@ -27,8 +29,6 @@ github.com/Microsoft/hcsshim/internal/oc
 github.com/Microsoft/hcsshim/internal/regstate
 github.com/Microsoft/hcsshim/internal/runhcs
 github.com/Microsoft/hcsshim/internal/safefile
-github.com/Microsoft/hcsshim/internal/schema1
-github.com/Microsoft/hcsshim/internal/schema2
 github.com/Microsoft/hcsshim/internal/timeout
 github.com/Microsoft/hcsshim/internal/vmcompute
 github.com/Microsoft/hcsshim/internal/wclayer
@@ -37,6 +37,8 @@ github.com/Microsoft/hcsshim/osversion
 github.com/Microsoft/hcsshim/pkg/ociwclayer
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/bits-and-blooms/bitset v1.2.0
+github.com/bits-and-blooms/bitset
 # github.com/cenkalti/backoff/v4 v4.1.1
 github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash/v2 v2.1.1
@@ -45,7 +47,7 @@ github.com/cespare/xxhash/v2
 github.com/containerd/cgroups/stats/v1
 # github.com/containerd/console v1.0.2
 github.com/containerd/console
-# github.com/containerd/containerd v1.5.2
+# github.com/containerd/containerd v1.5.2 => github.com/ktock/containerd v1.2.1-0.20210615124510-50ed319ed864
 github.com/containerd/containerd
 github.com/containerd/containerd/api/services/containers/v1
 github.com/containerd/containerd/api/services/content/v1
@@ -115,7 +117,7 @@ github.com/containerd/containerd/snapshots/proxy
 github.com/containerd/containerd/snapshots/storage
 github.com/containerd/containerd/sys
 github.com/containerd/containerd/version
-# github.com/containerd/continuity v0.1.0
+# github.com/containerd/continuity v0.1.0 => github.com/ktock/continuity v0.1.1-0.20210616010202-ce76fccd7658
 github.com/containerd/continuity
 github.com/containerd/continuity/devices
 github.com/containerd/continuity/driver
@@ -315,11 +317,11 @@ github.com/opencontainers/go-digest
 github.com/opencontainers/image-spec/identity
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/opencontainers/runc v1.0.0-rc93
+# github.com/opencontainers/runc v1.0.0-rc95
 github.com/opencontainers/runc/libcontainer/user
-# github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d
+# github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/opencontainers/selinux v1.8.0
+# github.com/opencontainers/selinux v1.8.2
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/go-selinux/label
 github.com/opencontainers/selinux/pkg/pwalk
@@ -365,8 +367,6 @@ github.com/tonistiigi/units
 github.com/tonistiigi/vt100
 # github.com/urfave/cli v1.22.2
 github.com/urfave/cli
-# github.com/willf/bitset v1.1.11
-github.com/willf/bitset
 # go.etcd.io/bbolt v1.3.5
 go.etcd.io/bbolt
 # go.opencensus.io v0.22.3
@@ -442,7 +442,7 @@ golang.org/x/net/trace
 # golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57
+# golang.org/x/sys v0.0.0-20210426230700-d19ff857e887
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader

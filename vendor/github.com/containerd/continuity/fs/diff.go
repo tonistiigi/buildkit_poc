@@ -103,8 +103,8 @@ func Changes(ctx context.Context, a, b string, changeFn ChangeFunc) error {
 		logrus.Debugf("Using single walk diff for %s", b)
 		return addDirChanges(ctx, changeFn, b)
 	} else if diffOptions := detectDirDiff(b, a); diffOptions != nil {
-		logrus.Debugf("Using single walk diff for %s from %s", diffOptions.diffDir, a)
-		return diffDirChanges(ctx, changeFn, a, diffOptions)
+		logrus.Debugf("Using single walk diff for %s from %s", diffOptions.DiffDir, a)
+		return DiffDirChanges(ctx, changeFn, a, diffOptions)
 	}
 
 	logrus.Debugf("Using double walk diff for %s from %s", b, a)
@@ -134,24 +134,24 @@ func addDirChanges(ctx context.Context, changeFn ChangeFunc, root string) error 
 	})
 }
 
-// diffDirOptions is used when the diff can be directly calculated from
+// DiffDirOptions is used when the diff can be directly calculated from
 // a diff directory to its base, without walking both trees.
-type diffDirOptions struct {
-	diffDir      string
-	skipChange   func(string) (bool, error)
-	deleteChange func(string, string, os.FileInfo) (string, error)
+type DiffDirOptions struct {
+	DiffDir      string
+	SkipChange   func(string) (bool, error)
+	DeleteChange func(string, string, string, os.FileInfo) (string, bool, error)
 }
 
-// diffDirChanges walks the diff directory and compares changes against the base.
-func diffDirChanges(ctx context.Context, changeFn ChangeFunc, base string, o *diffDirOptions) error {
+// DiffDirChanges walks the diff directory and compares changes against the base.
+func DiffDirChanges(ctx context.Context, changeFn ChangeFunc, base string, o *DiffDirOptions) error {
 	changedDirs := make(map[string]struct{})
-	return filepath.Walk(o.diffDir, func(path string, f os.FileInfo, err error) error {
+	return filepath.Walk(o.DiffDir, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		// Rebase path
-		path, err = filepath.Rel(o.diffDir, path)
+		path, err = filepath.Rel(o.DiffDir, path)
 		if err != nil {
 			return err
 		}
@@ -166,17 +166,24 @@ func diffDirChanges(ctx context.Context, changeFn ChangeFunc, base string, o *di
 		// TODO: handle opaqueness, start new double walker at this
 		// location to get deletes, and skip tree in single walker
 
-		if o.skipChange != nil {
-			if skip, err := o.skipChange(path); skip {
+		if o.SkipChange != nil {
+			if skip, err := o.SkipChange(path); skip {
 				return err
 			}
 		}
 
 		var kind ChangeKind
 
-		deletedFile, err := o.deleteChange(o.diffDir, path, f)
-		if err != nil {
-			return err
+		var deletedFile string
+		if o.DeleteChange != nil {
+			var skip bool
+			deletedFile, skip, err = o.DeleteChange(o.DiffDir, path, base, f)
+			if err != nil {
+				return err
+			}
+			if skip {
+				return nil
+			}
 		}
 
 		// Find out what kind of modification happened
@@ -212,13 +219,13 @@ func diffDirChanges(ctx context.Context, changeFn ChangeFunc, base string, o *di
 		// This block is here to ensure the change is recorded even if the
 		// modify time, mode and size of the parent directory in the rw and ro layers are all equal.
 		// Check https://github.com/docker/docker/pull/13590 for details.
-		if f.IsDir() {
+		if f != nil && f.IsDir() {
 			changedDirs[path] = struct{}{}
 		}
 		if kind == ChangeKindAdd || kind == ChangeKindDelete {
 			parent := filepath.Dir(path)
 			if _, ok := changedDirs[parent]; !ok && parent != "/" {
-				pi, err := os.Stat(filepath.Join(o.diffDir, parent))
+				pi, err := os.Stat(filepath.Join(o.DiffDir, parent))
 				if err := changeFn(ChangeKindModify, parent, pi, err); err != nil {
 					return err
 				}
