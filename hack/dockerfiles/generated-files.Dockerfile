@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.2
 
 # protoc is dynamically linked to glibc to can't use golang:1.10-alpine
-FROM golang:1.16-buster AS gobuild-base
+FROM golang:1.17beta1-buster AS gobuild-base
 # https://github.com/golang/protobuf/blob/v1.3.5/.travis.yml#L15
 ARG PROTOC_VERSION=3.11.4
 ARG GOGO_VERSION=v1.3.2

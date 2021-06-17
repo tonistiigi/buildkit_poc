@@ -22,18 +22,8 @@ RUN apk add --no-cache git
 # xx is a helper for cross-compilation
 FROM --platform=$BUILDPLATFORM tonistiigi/xx@sha256:810dc54d5144f133a218e88e319184bf8b9ce01d37d46ddb37573e90decd9eef AS xx
 
-FROM --platform=$BUILDPLATFORM golang:1.16-alpine AS golatest
-
-FROM golatest AS go-linux
-FROM golatest AS go-darwin
-FROM golatest AS go-windows-amd64
-FROM golatest AS go-windows-386
-FROM golatest AS go-windows-arm
-FROM --platform=$BUILDPLATFORM tonistiigi/golang:497feff1-alpine AS go-windows-arm64
-FROM go-windows-${TARGETARCH} AS go-windows
-
 # gobuild is base stage for compiling go/cgo
-FROM go-${TARGETOS} AS gobuild-base
+FROM --platform=$BUILDPLATFORM golang:1.17beta1-alpine AS gobuild-base
 RUN apk add --no-cache file bash clang lld pkgconfig git make
 COPY --from=xx / /
 
