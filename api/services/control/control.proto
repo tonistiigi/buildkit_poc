@@ -29,7 +29,7 @@ message PruneRequest {
 }
 
 message DiskUsageRequest {
-	repeated string filter = 1; 
+	repeated string filter = 1;
 }
 
 message DiskUsageResponse {
@@ -50,17 +50,23 @@ message UsageRecord {
 	bool Shared = 11;
 }
 
+message Exporter {
+	string Name = 1;
+	map<string, string> ExporterAttrs = 2;
+}
+
 message SolveRequest {
 	string Ref = 1;
 	pb.Definition Definition = 2;
-	string Exporter = 3;
-	map<string, string> ExporterAttrs = 4;
+	string ExporterDeprecated = 3;
+	map<string, string> ExporterAttrsDeprecated = 4;
 	string Session = 5;
 	string Frontend = 6;
 	map<string, string> FrontendAttrs = 7;
 	CacheOptions Cache = 8 [(gogoproto.nullable) = false];
 	repeated string Entitlements = 9 [(gogoproto.customtype) = "github.com/moby/buildkit/util/entitlements.Entitlement" ];
 	map<string, pb.Definition> FrontendInputs = 10;
+	repeated Exporter Exporters = 11;
 }
 
 message CacheOptions {
@@ -91,8 +97,12 @@ message CacheOptionsEntry {
 	map<string, string> Attrs = 2;
 }
 
-message SolveResponse {
+message ExporterResponse{
 	map<string, string> ExporterResponse = 1;
+}
+message SolveResponse {
+	ExporterResponse ExporterResponse = 1;
+	repeated ExporterResponse ExportersResponse= 2;
 }
 
 message StatusRequest {

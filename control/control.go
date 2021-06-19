@@ -226,20 +226,36 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 	}()
 
 	var expi exporter.ExporterInstance
+	var expis []exporter.ExporterInstance
 	// TODO: multiworker
 	// This is actually tricky, as the exporter should come from the worker that has the returned reference. We may need to delay this so that the solver loads this.
 	w, err := c.opt.WorkerController.GetDefault()
 	if err != nil {
 		return nil, err
 	}
-	if req.Exporter != "" {
-		exp, err := w.Exporter(req.Exporter, c.opt.SessionManager)
+
+	if req.ExporterDeprecated != "" {
+		exp, err := w.Exporter(req.ExporterDeprecated, c.opt.SessionManager)
 		if err != nil {
 			return nil, err
 		}
-		expi, err = exp.Resolve(ctx, req.ExporterAttrs)
+		expi, err = exp.Resolve(ctx, req.ExporterAttrsDeprecated)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if req.Exporters != nil {
+		for i := 0; i <= len(req.Exporters)-1; i++ {
+			exp, err := w.Exporter(req.Exporters[i].Name, c.opt.SessionManager)
+			if err != nil {
+				return nil, err
+			}
+			expi, err = exp.Resolve(ctx, req.Exporters[i].ExporterAttrs)
+			if err != nil {
+				return nil, err
+			}
+			expis = append(expis, expi)
+			expi = nil
 		}
 	}
 
@@ -279,6 +295,7 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 		FrontendInputs: req.FrontendInputs,
 		CacheImports:   cacheImports,
 	}, llbsolver.ExporterRequest{
+		Exporters:       expis,
 		Exporter:        expi,
 		CacheExporter:   cacheExporter,
 		CacheExportMode: cacheExportMode,
@@ -287,7 +304,8 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 		return nil, err
 	}
 	return &controlapi.SolveResponse{
-		ExporterResponse: resp.ExporterResponse,
+		ExporterResponse:  resp.ExporterResponse,
+		ExportersResponse: resp.ExportersResponse,
 	}, nil
 }
 

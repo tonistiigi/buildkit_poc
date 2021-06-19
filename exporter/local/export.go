@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/idtools"
+	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/exporter"
 	"github.com/moby/buildkit/session"
@@ -46,7 +47,7 @@ func (e *localExporterInstance) Name() string {
 	return "exporting to client"
 }
 
-func (e *localExporterInstance) Export(ctx context.Context, inp exporter.Source, sessionID string) (map[string]string, error) {
+func (e *localExporterInstance) Export(ctx context.Context, inp exporter.Source, sessionID string) (*controlapi.ExporterResponse, error) {
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
