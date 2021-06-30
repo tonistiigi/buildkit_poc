@@ -37,6 +37,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const upperDirKey = "containerd.io/snapshot/overlay.upperdir"
+
 // SnapshotterConfig is used to configure the overlay snapshotter instance
 type SnapshotterConfig struct {
 	asyncRemove bool
@@ -236,6 +238,9 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 	if _, err = storage.CommitActive(ctx, key, name, snapshots.Usage(usage), opts...); err != nil {
 		return errors.Wrap(err, "failed to commit snapshot")
 	}
+	if err := o.addUpperDirLabel(ctx, name); err != nil {
+		return err
+	}
 	return t.Commit()
 }
 
@@ -397,6 +402,9 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create snapshot")
 	}
+	if err := o.addUpperDirLabel(ctx, key); err != nil {
+		return nil, err
+	}
 
 	if len(s.ParentIDs) > 0 {
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
@@ -523,4 +531,19 @@ func (o *snapshotter) workPath(id string) string {
 // Close closes the snapshotter
 func (o *snapshotter) Close() error {
 	return o.ms.Close()
+}
+
+func (o *snapshotter) addUpperDirLabel(ctx context.Context, key string) error {
+	id, info, _, err := storage.GetInfo(ctx, key)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get info of created snapshot %s", key)
+	}
+	if info.Labels == nil {
+		info.Labels = make(map[string]string)
+	}
+	info.Labels[upperDirKey] = o.upperPath(id)
+	if _, err = storage.UpdateInfo(ctx, info, "labels."+upperDirKey); err != nil {
+		return errors.Wrapf(err, "failed to add upper dir label to snapshot")
+	}
+	return nil
 }

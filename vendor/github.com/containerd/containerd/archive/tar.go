@@ -91,7 +91,7 @@ func WriteDiff(ctx context.Context, w io.Writer, a, b string, opts ...WriteDiffO
 // based off AUFS whiteouts.
 // See https://github.com/opencontainers/image-spec/blob/master/layer.md
 func writeDiffNaive(ctx context.Context, w io.Writer, a, b string, _ WriteDiffOptions) error {
-	cw := newChangeWriter(w, b)
+	cw := NewChangeWriter(w, b)
 	err := fs.Changes(ctx, a, b, cw.HandleChange)
 	if err != nil {
 		return errors.Wrap(err, "failed to create diff tar stream")
@@ -462,7 +462,7 @@ func mkparent(ctx context.Context, path, root string, parents []string) error {
 	return nil
 }
 
-type changeWriter struct {
+type ChangeWriter struct {
 	tw        *tar.Writer
 	source    string
 	whiteoutT time.Time
@@ -471,8 +471,8 @@ type changeWriter struct {
 	addedDirs map[string]struct{}
 }
 
-func newChangeWriter(w io.Writer, source string) *changeWriter {
-	return &changeWriter{
+func NewChangeWriter(w io.Writer, source string) *ChangeWriter {
+	return &ChangeWriter{
 		tw:        tar.NewWriter(w),
 		source:    source,
 		whiteoutT: time.Now(),
@@ -482,7 +482,7 @@ func newChangeWriter(w io.Writer, source string) *changeWriter {
 	}
 }
 
-func (cw *changeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, err error) error {
+func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, err error) error {
 	if err != nil {
 		return err
 	}
@@ -630,14 +630,14 @@ func (cw *changeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, e
 	return nil
 }
 
-func (cw *changeWriter) Close() error {
+func (cw *ChangeWriter) Close() error {
 	if err := cw.tw.Close(); err != nil {
 		return errors.Wrap(err, "failed to close tar writer")
 	}
 	return nil
 }
 
-func (cw *changeWriter) includeParents(hdr *tar.Header) error {
+func (cw *ChangeWriter) includeParents(hdr *tar.Header) error {
 	if cw.addedDirs == nil {
 		return nil
 	}

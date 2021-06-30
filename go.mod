@@ -4,8 +4,8 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/Microsoft/go-winio v0.4.17
-	github.com/Microsoft/hcsshim v0.8.16
+	github.com/Microsoft/go-winio v0.5.0
+	github.com/Microsoft/hcsshim v0.8.17
 	github.com/containerd/console v1.0.2
 	github.com/containerd/containerd v1.5.2
 	github.com/containerd/continuity v0.1.0
@@ -41,9 +41,9 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/opencontainers/runc v1.0.0-rc93
-	github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d
-	github.com/opencontainers/selinux v1.8.0
+	github.com/opencontainers/runc v1.0.0-rc95
+	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
+	github.com/opencontainers/selinux v1.8.2
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/profile v1.5.0
 	github.com/serialx/hashring v0.0.0-20190422032157-8b2912629002
@@ -65,13 +65,16 @@ require (
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57
+	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	google.golang.org/genproto v0.0.0-20201110150050-8816d57aaa9a
 	google.golang.org/grpc v1.38.0
 )
 
 replace (
+	// Patched version of containerd and continuity for overlayfs-optimized differ
+	github.com/containerd/containerd => github.com/ktock/containerd v1.2.1-0.20210615124510-50ed319ed864
+	github.com/containerd/continuity => github.com/ktock/continuity v0.1.1-0.20210616010202-ce76fccd7658
 	github.com/docker/docker => github.com/docker/docker v20.10.3-0.20210609100121-ef4d47340142+incompatible
 	github.com/hashicorp/go-immutable-radix => github.com/tonistiigi/go-immutable-radix v0.0.0-20170803185627-826af9ccf0fe
 )

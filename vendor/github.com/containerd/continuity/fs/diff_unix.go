@@ -30,7 +30,7 @@ import (
 // detectDirDiff returns diff dir options if a directory could
 // be found in the mount info for upper which is the direct
 // diff with the provided lower directory
-func detectDirDiff(upper, lower string) *diffDirOptions {
+func detectDirDiff(upper, lower string) *DiffDirOptions {
 	// TODO: get mount options for upper
 	// TODO: detect AUFS
 	// TODO: detect overlay
