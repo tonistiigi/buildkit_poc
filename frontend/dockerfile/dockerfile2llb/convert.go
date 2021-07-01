@@ -680,6 +680,12 @@ func dispatchRun(d *dispatchState, c *instructions.RunCommand, proxy *llb.ProxyE
 				opt = append(opt, mount)
 
 				args[0] = path.Join(destPath, f)
+
+				// Explicitly disable the shell, since it's not required for
+				// running a shebang-script. Not using shell functionality for
+				// this also allows this to work with non-standard shells (or
+				// even no shell at all).
+				c.PrependShell = false
 			} else {
 				// Just a simple heredoc, so just run the contents in the
 				// shell: this creates the effect of a "fake"-heredoc, so that

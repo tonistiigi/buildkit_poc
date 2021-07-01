@@ -22,6 +22,7 @@ var hdTests = []integration.Test{
 	testRunBasicHeredoc,
 	testRunFakeHeredoc,
 	testRunShebangHeredoc,
+	testRunShebangHeredocNoShell,
 	testRunComplexHeredoc,
 	testHeredocIndent,
 	testHeredocVarSubstitution,
@@ -258,6 +259,56 @@ COPY --from=build /dest /dest
 	dt, err := ioutil.ReadFile(filepath.Join(destDir, "dest"))
 	require.NoError(t, err)
 	require.Equal(t, "hello\nworld\n", string(dt))
+}
+
+func testRunShebangHeredocNoShell(t *testing.T, sb integration.Sandbox) {
+	f := getFrontend(t, sb)
+
+	dockerfile := []byte(`
+FROM busybox AS build
+
+SHELL ["/bin/non-existent"]
+
+RUN <<EOF
+#!/bin/sh
+echo "still works" > /dest
+EOF
+
+FROM scratch
+COPY --from=build /dest /dest
+`)
+
+	dir, err := tmpdir(
+		fstest.CreateFile("Dockerfile", []byte(dockerfile), 0600),
+	)
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	c, err := client.New(sb.Context(), sb.Address())
+	require.NoError(t, err)
+	defer c.Close()
+
+	destDir, err := ioutil.TempDir("", "buildkit")
+	require.NoError(t, err)
+	defer os.RemoveAll(destDir)
+
+	_, err = f.Solve(sb.Context(), c, client.SolveOpt{
+		Exports: []client.ExportEntry{
+			{
+				Type:      client.ExporterLocal,
+				OutputDir: destDir,
+			},
+		},
+		LocalDirs: map[string]string{
+			builder.DefaultLocalNameDockerfile: dir,
+			builder.DefaultLocalNameContext:    dir,
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	dt, err := ioutil.ReadFile(filepath.Join(destDir, "dest"))
+	require.NoError(t, err)
+	require.Equal(t, "still works\n", string(dt))
 }
 
 func testRunComplexHeredoc(t *testing.T, sb integration.Sandbox) {
