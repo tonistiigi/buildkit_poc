@@ -11,7 +11,6 @@ import (
 
 const sizeUnknown int64 = -1
 const keySize = "snapshot.size"
-const keyEqualMutable = "cache.equalMutable"
 const keyCachePolicy = "cache.cachePolicy"
 const keyDescription = "cache.description"
 const keyCreatedAt = "cache.createdAt"
@@ -19,7 +18,6 @@ const keyLastUsedAt = "cache.lastUsedAt"
 const keyUsageCount = "cache.usageCount"
 const keyLayerType = "cache.layerType"
 const keyRecordType = "cache.recordType"
-const keyCommitted = "snapshot.committed"
 const keyParent = "cache.parent"
 const keyDiffID = "cache.diffID"
 const keyChainID = "cache.chainID"
@@ -34,6 +32,9 @@ const keyImageRefs = "cache.imageRefs"
 const keyBlobSize = "cache.blobsize"
 
 const keyDeleted = "cache.deleted"
+
+// Deprecated keys, only retained when needed for migrating from older versions of buildkit
+const deprecatedKeyEqualMutable = "cache.equalMutable"
 
 func queueDiffID(si *metadata.StorageItem, str string) error {
 	if str == "" {
@@ -93,7 +94,7 @@ func queueSnapshotID(si *metadata.StorageItem, str string) error {
 	}
 	v, err := metadata.NewValue(str)
 	if err != nil {
-		return errors.Wrap(err, "failed to create chainID value")
+		return errors.Wrap(err, "failed to create snapshot ID value")
 	}
 	si.Queue(func(b *bolt.Bucket) error {
 		return si.SetValue(b, keySnapshot, v)
@@ -239,29 +240,6 @@ func getDeleted(si *metadata.StorageItem) bool {
 	return deleted
 }
 
-func queueCommitted(si *metadata.StorageItem) error {
-	v, err := metadata.NewValue(true)
-	if err != nil {
-		return errors.Wrap(err, "failed to create committed value")
-	}
-	si.Queue(func(b *bolt.Bucket) error {
-		return si.SetValue(b, keyCommitted, v)
-	})
-	return nil
-}
-
-func getCommitted(si *metadata.StorageItem) bool {
-	v := si.Get(keyCommitted)
-	if v == nil {
-		return false
-	}
-	var committed bool
-	if err := v.Unmarshal(&committed); err != nil {
-		return false
-	}
-	return committed
-}
-
 func queueParent(si *metadata.StorageItem, parent string) error {
 	if parent == "" {
 		return nil
@@ -369,7 +347,7 @@ func getBlobSize(si *metadata.StorageItem) int64 {
 }
 
 func getEqualMutable(si *metadata.StorageItem) string {
-	v := si.Get(keyEqualMutable)
+	v := si.Get(deprecatedKeyEqualMutable)
 	if v == nil {
 		return ""
 	}
@@ -383,17 +361,17 @@ func getEqualMutable(si *metadata.StorageItem) string {
 func setEqualMutable(si *metadata.StorageItem, s string) error {
 	v, err := metadata.NewValue(s)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create %s meta value", keyEqualMutable)
+		return errors.Wrapf(err, "failed to create %s meta value", deprecatedKeyEqualMutable)
 	}
 	si.Queue(func(b *bolt.Bucket) error {
-		return si.SetValue(b, keyEqualMutable, v)
+		return si.SetValue(b, deprecatedKeyEqualMutable, v)
 	})
 	return nil
 }
 
 func clearEqualMutable(si *metadata.StorageItem) error {
 	si.Queue(func(b *bolt.Bucket) error {
-		return si.SetValue(b, keyEqualMutable, nil)
+		return si.SetValue(b, deprecatedKeyEqualMutable, nil)
 	})
 	return nil
 }

@@ -111,14 +111,9 @@ func MigrateV2(ctx context.Context, from, to string, cs content.Store, s snapsho
 			if err != nil {
 				return err
 			}
-			if info.Kind == snapshots.KindCommitted {
-				queueCommitted(item)
-			}
 			if info.Parent != "" {
 				queueParent(item, info.Parent)
 			}
-		} else {
-			queueCommitted(item)
 		}
 		queueSnapshotID(item, id)
 		item.Commit()
@@ -252,8 +247,8 @@ func MigrateV2(ctx context.Context, from, to string, cs content.Store, s snapsho
 	}
 
 	for _, item := range byID {
-		logrus.Infof("migrated %s parent:%q snapshot:%v committed:%v blob:%v diffid:%v chainID:%v blobChainID:%v",
-			item.ID(), getParent(item), getSnapshotID(item), getCommitted(item), getBlob(item), getDiffID(item), getChainID(item), getBlobChainID(item))
+		logrus.Infof("migrated %s parent:%q snapshot:%v blob:%v diffid:%v chainID:%v blobChainID:%v",
+			item.ID(), getParent(item), getSnapshotID(item), getBlob(item), getDiffID(item), getChainID(item), getBlobChainID(item))
 	}
 
 	return nil
