@@ -1,12 +1,17 @@
 package dockerfile2llb
 
 import (
+	"bytes"
+	"runtime"
 	"testing"
 
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func toEnvMap(args []instructions.KeyValuePairOptional, env []string) map[string]string {
@@ -187,4 +192,100 @@ COPY --from=stage1 f2 /sub/
 `
 	_, _, err = Dockerfile2LLB(appcontext.Context(), []byte(df), ConvertOpt{})
 	assert.EqualError(t, err, "circular dependency detected on stage: stage0")
+}
+
+func TestDockerfileWorkdirPathFormat(t *testing.T) {
+	// Ensure that paths seen in the Dockerfile, which may be in system-local format,
+	// are `/`-formatted in LLB, for in-container or context-relative use.
+
+	caps := pb.Caps.CapSet(pb.Caps.All())
+	convertOpts := ConvertOpt{
+		LLBCaps: &caps,
+	}
+
+	expectedState := llb.Scratch().Dir("/test").File(llb.Mkdir("/test", 0755, llb.WithParents(true)))
+	expectedDef, err := expectedState.Marshal(appcontext.Context(), llb.WithCaps(caps))
+	require.NoError(t, err)
+
+	df := `FROM scratch
+WORKDIR /test
+`
+	state, _, err := Dockerfile2LLB(appcontext.Context(), []byte(df), convertOpts)
+	require.NoError(t, err)
+
+	workdir, err := state.GetDir(appcontext.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "/test", workdir)
+
+	def, err := state.Marshal(appcontext.Context(), llb.WithCaps(caps))
+	require.NoError(t, err)
+	require.Equal(t, len(expectedDef.Metadata), len(def.Metadata))
+	require.Equal(t, len(expectedDef.Def), len(def.Def))
+
+	for i := 0; i < len(expectedDef.Def); i++ {
+		res := bytes.Compare(expectedDef.Def[i], def.Def[i])
+		assert.Equalf(t, res, 0, "def %d expected %v, got %v", i, expectedDef.Def[i], def.Def[i])
+	}
+
+	if runtime.GOOS == "windows" {
+		df := `FROM scratch
+WORKDIR \test
+		`
+		state, _, err := Dockerfile2LLB(appcontext.Context(), []byte(df), convertOpts)
+		assert.NoError(t, err)
+
+		workdir, err := state.GetDir(appcontext.Context())
+		assert.NoError(t, err)
+		assert.Equal(t, "/test", workdir)
+
+		def, err := state.Marshal(appcontext.Context(), llb.WithCaps(caps))
+		require.NoError(t, err)
+		require.Equal(t, len(expectedDef.Metadata), len(def.Metadata))
+		require.Equal(t, len(expectedDef.Def), len(def.Def))
+
+		for i := 0; i < len(expectedDef.Def); i++ {
+			res := bytes.Compare(expectedDef.Def[i], def.Def[i])
+			assert.Equalf(t, res, 0, "def %d expected %v, got %v", i, expectedDef.Def[i], def.Def[i])
+		}
+
+		df = `FROM scratch
+WORKDIR C:/test
+		`
+		state, _, err = Dockerfile2LLB(appcontext.Context(), []byte(df), convertOpts)
+		assert.NoError(t, err)
+
+		workdir, err = state.GetDir(appcontext.Context())
+		assert.NoError(t, err)
+		assert.Equal(t, "/test", workdir)
+
+		def, err = state.Marshal(appcontext.Context(), llb.WithCaps(caps))
+		require.NoError(t, err)
+		require.Equal(t, len(expectedDef.Metadata), len(def.Metadata))
+		require.Equal(t, len(expectedDef.Def), len(def.Def))
+
+		for i := 0; i < len(expectedDef.Def); i++ {
+			res := bytes.Compare(expectedDef.Def[i], def.Def[i])
+			assert.Equalf(t, res, 0, "def %d expected %v, got %v", i, expectedDef.Def[i], def.Def[i])
+		}
+
+		df = `FROM scratch
+WORKDIR C:\test
+		`
+		state, _, err = Dockerfile2LLB(appcontext.Context(), []byte(df), convertOpts)
+		assert.NoError(t, err)
+
+		workdir, err = state.GetDir(appcontext.Context())
+		assert.NoError(t, err)
+		assert.Equal(t, "/test", workdir)
+
+		def, err = state.Marshal(appcontext.Context(), llb.WithCaps(caps))
+		require.NoError(t, err)
+		require.Equal(t, len(expectedDef.Metadata), len(def.Metadata))
+		require.Equal(t, len(expectedDef.Def), len(def.Def))
+
+		for i := 0; i < len(expectedDef.Def); i++ {
+			res := bytes.Compare(expectedDef.Def[i], def.Def[i])
+			assert.Equalf(t, res, 0, "def %d expected %v, got %v", i, expectedDef.Def[i], def.Def[i])
+		}
+	}
 }

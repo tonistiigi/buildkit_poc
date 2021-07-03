@@ -2,6 +2,7 @@ package instructions
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/moby/buildkit/frontend/dockerfile/command"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
+	"github.com/moby/buildkit/util/system"
 	"github.com/pkg/errors"
 )
 
@@ -400,8 +402,14 @@ func parseWorkdir(req parseRequest) (*WorkdirCommand, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	path, err := system.CheckSystemDriveAndRemoveDriveLetter(req.args[0])
+	if err != nil {
+		return nil, err
+	}
+
 	return &WorkdirCommand{
-		Path:            req.args[0],
+		Path:            filepath.ToSlash(path),
 		withNameAndCode: newWithNameAndCode(req),
 	}, nil
 
