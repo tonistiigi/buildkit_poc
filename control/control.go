@@ -247,9 +247,8 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 	}()
 
 	var expi exporter.ExporterInstance
-	// TODO: multiworker
 	// This is actually tricky, as the exporter should come from the worker that has the returned reference. We may need to delay this so that the solver loads this.
-	w, err := c.opt.WorkerController.GetDefault()
+	w, err := c.opt.WorkerController.GetFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

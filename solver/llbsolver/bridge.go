@@ -20,6 +20,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/flightcontrol"
 	"github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/workercontext"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -28,7 +29,7 @@ import (
 type llbBridge struct {
 	builder                   solver.Builder
 	frontends                 map[string]frontend.Frontend
-	resolveWorker             func() (worker.Worker, error)
+	resolveWorker             func(ctx context.Context) (worker.Worker, error)
 	eachWorker                func(func(worker.Worker) error) error
 	resolveCacheImporterFuncs map[string]remotecache.ResolveCacheImporterFunc
 	cms                       map[string]solver.CacheManager
@@ -37,7 +38,8 @@ type llbBridge struct {
 }
 
 func (b *llbBridge) loadResult(ctx context.Context, def *pb.Definition, cacheImports []gw.CacheOptionsEntry) (solver.CachedResult, error) {
-	w, err := b.resolveWorker()
+	ctx = workercontext.WithWorker(ctx, loadWorkerID(b.builder))
+	w, err := b.resolveWorker(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +260,8 @@ func (rp *resultProxy) Result(ctx context.Context) (res solver.CachedResult, err
 }
 
 func (b *llbBridge) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (dgst digest.Digest, config []byte, err error) {
-	w, err := b.resolveWorker()
+	ctx = workercontext.WithWorker(ctx, loadWorkerID(b.builder))
+	w, err := b.resolveWorker(ctx)
 	if err != nil {
 		return "", nil, err
 	}

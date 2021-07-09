@@ -3658,7 +3658,7 @@ func (r *dummyResult) Release(context.Context) error { return nil }
 func (r *dummyResult) Sys() interface{}              { return r }
 func (r *dummyResult) Clone() Result                 { return r }
 
-func testOpResolver(v Vertex, b Builder) (Op, error) {
+func testOpResolver(_ context.Context, v Vertex, b Builder) (Op, error) {
 	if op, ok := v.Sys().(Op); ok {
 		if vtx, ok := op.(*vertexSubBuild); ok {
 			vtx.b = b

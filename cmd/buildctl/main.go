@@ -56,6 +56,10 @@ func main() {
 			Value: defaultAddress,
 		},
 		cli.StringFlag{
+			Name:  "worker",
+			Usage: "worker ID or executor name (e.g., \"oci\", \"containerd\"), defaults is determined by the daemon",
+		},
+		cli.StringFlag{
 			Name:  "tlsservername",
 			Usage: "buildkitd server name for certificate validation",
 			Value: "",

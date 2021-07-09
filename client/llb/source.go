@@ -13,6 +13,7 @@ import (
 	"github.com/moby/buildkit/util/apicaps"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/moby/buildkit/util/sshutil"
+	"github.com/moby/buildkit/worker/workercontext"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -141,7 +142,8 @@ func Image(ref string, opts ...ImageOption) State {
 			if p == nil {
 				p = c.Platform
 			}
-			dgst, dt, err := info.metaResolver.ResolveImageConfig(context.TODO(), ref, ResolveImageConfigOpt{
+			ctx2 := workercontext.WithWorker(context.TODO(), workercontext.Worker(ctx))
+			dgst, dt, err := info.metaResolver.ResolveImageConfig(ctx2, ref, ResolveImageConfigOpt{
 				Platform:    p,
 				ResolveMode: info.resolveMode.String(),
 			})

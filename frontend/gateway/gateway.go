@@ -38,6 +38,7 @@ import (
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/util/tracing"
 	"github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/workercontext"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -248,7 +249,7 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 	}
 	defer lbf.Discard()
 
-	w, err := gf.workers.GetDefault()
+	w, err := gf.workers.GetFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -881,14 +882,16 @@ func (lbf *llbBridgeForwarder) NewContainer(ctx context.Context, in *pb.NewConta
 
 	// Not using `ctx` here because it will get cancelled as soon as NewContainer returns
 	// and we want the context to live for the duration of the container.
+	ctx2 := context.Background()
+	ctx2 = workercontext.WithWorker(ctx2, workercontext.Worker(ctx))
 	group := session.NewGroup(lbf.sid)
 
-	w, err := lbf.workers.GetDefault()
+	w, err := lbf.workers.GetFromContext(ctx)
 	if err != nil {
 		return nil, stack.Enable(err)
 	}
 
-	ctr, err := NewContainer(context.Background(), w, lbf.sm, group, ctrReq)
+	ctr, err := NewContainer(ctx2, w, lbf.sm, group, ctrReq)
 	if err != nil {
 		return nil, stack.Enable(err)
 	}
@@ -1129,6 +1132,7 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 
 				initCtx, initCancel := context.WithCancel(context.Background())
 				defer initCancel()
+				initCtx = workercontext.WithWorker(initCtx, workercontext.Worker(ctx))
 
 				pio := newProcessIO(pid, init.Fds)
 				pios[pid] = pio

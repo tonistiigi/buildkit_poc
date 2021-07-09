@@ -125,6 +125,7 @@ To run `buildkitd` as a non-root user, see [`docs/rootless.md`](docs/rootless.md
 The buildkitd daemon supports two worker backends: OCI (runc) and containerd.
 
 By default, the OCI (runc) worker is used. You can set `--oci-worker=false --containerd-worker=true` to use the containerd worker.
+Starting with BuildKit 0.9, the worker can be also chosen with `buildctl --worker=(oci|containerd)`.
 
 We are open to adding more backends.
 

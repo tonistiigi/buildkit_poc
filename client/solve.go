@@ -21,6 +21,7 @@ import (
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/entitlements"
+	"github.com/moby/buildkit/worker/workercontext"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -93,6 +94,7 @@ func (c *Client) solve(ctx context.Context, def *llb.Definition, runGateway runG
 	statusContext, cancelStatus := context.WithCancel(context.Background())
 	defer cancelStatus()
 
+	statusContext = workercontext.WithWorker(statusContext, workercontext.Worker(ctx))
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		statusContext = trace.ContextWithSpan(statusContext, span)
 	}

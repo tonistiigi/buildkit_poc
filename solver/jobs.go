@@ -19,7 +19,7 @@ import (
 )
 
 // ResolveOpFunc finds an Op implementation for a Vertex
-type ResolveOpFunc func(Vertex, Builder) (Op, error)
+type ResolveOpFunc func(context.Context, Vertex, Builder) (Op, error)
 
 type Builder interface {
 	Build(ctx context.Context, e Edge) (CachedResult, error)
@@ -711,7 +711,7 @@ func (s *sharedOp) CacheMap(ctx context.Context, index int) (resp *cacheMapResp,
 		err = errdefs.WithOp(err, s.st.vtx.Sys())
 		err = errdefs.WrapVertex(err, s.st.origDigest)
 	}()
-	op, err := s.getOp()
+	op, err := s.getOp(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +774,7 @@ func (s *sharedOp) Exec(ctx context.Context, inputs []Result) (outputs []Result,
 		err = errdefs.WithOp(err, s.st.vtx.Sys())
 		err = errdefs.WrapVertex(err, s.st.origDigest)
 	}()
-	op, err := s.getOp()
+	op, err := s.getOp(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -837,10 +837,10 @@ func (s *sharedOp) Exec(ctx context.Context, inputs []Result) (outputs []Result,
 	return unwrapShared(r.execRes), r.execExporters, nil
 }
 
-func (s *sharedOp) getOp() (Op, error) {
+func (s *sharedOp) getOp(ctx context.Context) (Op, error) {
 	s.opOnce.Do(func() {
 		s.subBuilder = s.st.builder()
-		s.op, s.err = s.resolver(s.st.vtx, s.subBuilder)
+		s.op, s.err = s.resolver(ctx, s.st.vtx, s.subBuilder)
 	})
 	if s.err != nil {
 		return nil, s.err

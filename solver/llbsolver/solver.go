@@ -20,12 +20,17 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/progress"
 	"github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/workercontext"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
-const keyEntitlements = "llb.entitlements"
+const (
+	keyEntitlements = "llb.entitlements"
+	keyWorkerID     = "llb.worker-id"
+)
 
 type ExporterRequest struct {
 	Exporter        exporter.ExporterInstance
@@ -34,7 +39,7 @@ type ExporterRequest struct {
 }
 
 // ResolveWorkerFunc returns default worker for the temporary default non-distributed use cases
-type ResolveWorkerFunc func() (worker.Worker, error)
+type ResolveWorkerFunc func(ctx context.Context) (worker.Worker, error)
 
 type Solver struct {
 	workerController          *worker.Controller
@@ -68,8 +73,9 @@ func New(wc *worker.Controller, f map[string]frontend.Frontend, cache solver.Cac
 }
 
 func (s *Solver) resolver() solver.ResolveOpFunc {
-	return func(v solver.Vertex, b solver.Builder) (solver.Op, error) {
-		w, err := s.resolveWorker()
+	return func(ctx context.Context, v solver.Vertex, b solver.Builder) (solver.Op, error) {
+		ctx = workercontext.WithWorker(ctx, loadWorkerID(b))
+		w, err := s.resolveWorker(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -102,6 +108,8 @@ func (s *Solver) Solve(ctx context.Context, id string, sessionID string, req fro
 		return nil, err
 	}
 	j.SetValue(keyEntitlements, set)
+	// Our ctx is not propagated to the scheduler, so we save worker id to j here
+	j.SetValue(keyWorkerID, workercontext.Worker(ctx))
 
 	j.SessionID = sessionID
 
@@ -307,8 +315,9 @@ func (s *Solver) Status(ctx context.Context, id string, statusChan chan *client.
 }
 
 func defaultResolver(wc *worker.Controller) ResolveWorkerFunc {
-	return func() (worker.Worker, error) {
-		return wc.GetDefault()
+	return func(ctx context.Context) (worker.Worker, error) {
+		logrus.Debugf("llbsolver.defaultResolver: workerID=%q", workercontext.Worker(ctx))
+		return wc.GetFromContext(ctx)
 	}
 }
 func allWorkers(wc *worker.Controller) func(func(w worker.Worker) error) error {
@@ -415,4 +424,15 @@ func loadEntitlements(b solver.Builder) (entitlements.Set, error) {
 		return nil, err
 	}
 	return ent, nil
+}
+
+func loadWorkerID(b solver.Builder) string {
+	var workerID string
+	b.EachValue(context.TODO(), keyWorkerID, func(v interface{}) error {
+		if s, ok := v.(string); ok && s != "" {
+			workerID = s
+		}
+		return nil
+	})
+	return workerID
 }

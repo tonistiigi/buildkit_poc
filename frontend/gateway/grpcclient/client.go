@@ -69,12 +69,12 @@ func New(ctx context.Context, opts map[string]string, session, product string, c
 	}, nil
 }
 
-func current() (GrpcClient, error) {
+func current(ctx context.Context) (GrpcClient, error) {
 	if ep := product(); ep != "" {
 		apicaps.ExportedProduct = ep
 	}
 
-	ctx, conn, err := grpcClientConn(context.Background())
+	ctx, conn, err := grpcClientConn(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func convertRef(ref client.Reference) (*pb.Ref, error) {
 }
 
 func RunFromEnvironment(ctx context.Context, f client.BuildFunc) error {
-	client, err := current()
+	client, err := current(ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed to initialize client from environment")
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
+	"github.com/moby/buildkit/worker/workercontext"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/otel/trace"
@@ -85,6 +86,10 @@ func ResolveClient(c *cli.Context) (*client.Client, error) {
 	timeout := time.Duration(c.GlobalInt("timeout"))
 	ctx, cancel := context.WithTimeout(ctx, timeout*time.Second)
 	defer cancel()
+
+	if worker := c.GlobalString("worker"); worker != "" {
+		ctx = workercontext.WithWorker(ctx, worker)
+	}
 
 	return client.New(ctx, c.GlobalString("addr"), opts...)
 }

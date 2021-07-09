@@ -272,7 +272,7 @@ func (c *bridgeClient) NewContainer(ctx context.Context, req client.NewContainer
 		return nil, err
 	}
 
-	w, err := c.workers.GetDefault()
+	w, err := c.workers.GetFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

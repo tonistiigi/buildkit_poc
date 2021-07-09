@@ -648,19 +648,20 @@ func newController(c *cli.Context, cfg *config.Config, md *toml.MetaData) (*cont
 
 	resolverFn := resolverFunc(cfg)
 
-	w, err := wc.GetDefault()
-	if err != nil {
-		return nil, err
-	}
-
 	remoteCacheExporterFuncs := map[string]remotecache.ResolveCacheExporterFunc{
 		"registry": registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
 		"local":    localremotecache.ResolveCacheExporterFunc(sessionManager),
 		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
 	}
 	remoteCacheImporterFuncs := map[string]remotecache.ResolveCacheImporterFunc{
-		"registry": registryremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
-		"local":    localremotecache.ResolveCacheImporterFunc(sessionManager),
+		"registry": func(ctx context.Context, g session.Group, attrs map[string]string) (remotecache.Importer, specs.Descriptor, error) {
+			w, err := wc.GetFromContext(ctx)
+			if err != nil {
+				return nil, specs.Descriptor{}, err
+			}
+			return registryremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn)(ctx, g, attrs)
+		},
+		"local": localremotecache.ResolveCacheImporterFunc(sessionManager),
 	}
 
 	return control.NewController(control.Opt{
@@ -705,7 +706,6 @@ func newWorkerController(c *cli.Context, wiOpt workerInitializerOpt) (*worker.Co
 		return nil, err
 	}
 	logrus.Infof("found %d workers, default=%q", nWorkers, defaultWorker.ID())
-	logrus.Warn("currently, only the default worker can be used.")
 	return wc, nil
 }
 

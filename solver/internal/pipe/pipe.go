@@ -70,6 +70,7 @@ type Status struct {
 func NewWithFunction(f func(context.Context) (interface{}, error)) (*Pipe, func()) {
 	p := New(Request{})
 
+	// we create a new ctx here, so worker ID is not propagated here
 	ctx, cancel := context.WithCancel(context.TODO())
 
 	p.OnReceiveCompletion = func() {

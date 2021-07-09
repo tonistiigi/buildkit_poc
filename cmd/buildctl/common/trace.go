@@ -6,6 +6,7 @@ import (
 
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/tracing/detect"
+	"github.com/moby/buildkit/worker/workercontext"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -66,5 +67,9 @@ func AttachAppContext(app *cli.App) error {
 }
 
 func CommandContext(c *cli.Context) context.Context {
-	return c.App.Metadata["context"].(context.Context)
+	ctx := c.App.Metadata["context"].(context.Context)
+	if worker := c.GlobalString("worker"); worker != "" {
+		ctx = workercontext.WithWorker(ctx, worker)
+	}
+	return ctx
 }

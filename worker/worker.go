@@ -40,7 +40,7 @@ type Worker interface {
 }
 
 type Infos interface {
-	GetDefault() (Worker, error)
+	GetFromContext(ctx context.Context) (Worker, error)
 	WorkerInfos() []client.WorkerInfo
 }
 
