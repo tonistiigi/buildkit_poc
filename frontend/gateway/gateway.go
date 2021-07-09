@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/docker/distribution/reference"
 	"github.com/gogo/googleapis/google/rpc"
 	gogotypes "github.com/gogo/protobuf/types"
@@ -41,7 +43,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
@@ -834,7 +835,7 @@ func (lbf *llbBridgeForwarder) Inputs(ctx context.Context, in *pb.InputsRequest)
 }
 
 func (lbf *llbBridgeForwarder) NewContainer(ctx context.Context, in *pb.NewContainerRequest) (_ *pb.NewContainerResponse, err error) {
-	logrus.Debugf("|<--- NewContainer %s", in.ContainerID)
+	bklog.G(ctx).Debugf("|<--- NewContainer %s", in.ContainerID)
 	ctrReq := NewContainerRequest{
 		ContainerID: in.ContainerID,
 		NetMode:     in.Network,
@@ -909,7 +910,7 @@ func (lbf *llbBridgeForwarder) NewContainer(ctx context.Context, in *pb.NewConta
 }
 
 func (lbf *llbBridgeForwarder) ReleaseContainer(ctx context.Context, in *pb.ReleaseContainerRequest) (*pb.ReleaseContainerResponse, error) {
-	logrus.Debugf("|<--- ReleaseContainer %s", in.ContainerID)
+	bklog.G(ctx).Debugf("|<--- ReleaseContainer %s", in.ContainerID)
 	lbf.ctrsMu.Lock()
 	ctr, ok := lbf.ctrs[in.ContainerID]
 	delete(lbf.ctrs, in.ContainerID)
@@ -1024,7 +1025,7 @@ type outputWriter struct {
 }
 
 func (w *outputWriter) Write(msg []byte) (int, error) {
-	logrus.Debugf("|---> File Message %s, fd=%d, %d bytes", w.processID, w.fd, len(msg))
+	bklog.G(w.stream.Context()).Debugf("|---> File Message %s, fd=%d, %d bytes", w.processID, w.fd, len(msg))
 	err := w.stream.Send(&pb.ExecMessage{
 		ProcessID: w.processID,
 		Input: &pb.ExecMessage_File{
@@ -1054,15 +1055,15 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 			}
 			switch m := execMsg.GetInput().(type) {
 			case *pb.ExecMessage_Init:
-				logrus.Debugf("|<--- Init Message %s", execMsg.ProcessID)
+				bklog.G(ctx).Debugf("|<--- Init Message %s", execMsg.ProcessID)
 			case *pb.ExecMessage_File:
 				if m.File.EOF {
-					logrus.Debugf("|<--- File Message %s, fd=%d, EOF", execMsg.ProcessID, m.File.Fd)
+					bklog.G(ctx).Debugf("|<--- File Message %s, fd=%d, EOF", execMsg.ProcessID, m.File.Fd)
 				} else {
-					logrus.Debugf("|<--- File Message %s, fd=%d, %d bytes", execMsg.ProcessID, m.File.Fd, len(m.File.Data))
+					bklog.G(ctx).Debugf("|<--- File Message %s, fd=%d, %d bytes", execMsg.ProcessID, m.File.Fd, len(m.File.Data))
 				}
 			case *pb.ExecMessage_Resize:
-				logrus.Debugf("|<--- Resize Message %s", execMsg.ProcessID)
+				bklog.G(ctx).Debugf("|<--- Resize Message %s", execMsg.ProcessID)
 			}
 			select {
 			case <-ctx.Done():
@@ -1150,7 +1151,7 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 
 				eg.Go(func() error {
 					<-pio.done
-					logrus.Debugf("|---> Done Message %s", pid)
+					bklog.G(ctx).Debugf("|---> Done Message %s", pid)
 					err := srv.Send(&pb.ExecMessage{
 						ProcessID: pid,
 						Input: &pb.ExecMessage_Done{
@@ -1182,7 +1183,7 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 					if errors.As(err, &exitError) {
 						statusCode = exitError.ExitCode
 					}
-					logrus.Debugf("|---> Exit Message %s, code=%d, error=%s", pid, statusCode, err)
+					bklog.G(ctx).Debugf("|---> Exit Message %s, code=%d, error=%s", pid, statusCode, err)
 					sendErr := srv.Send(&pb.ExecMessage{
 						ProcessID: pid,
 						Input: &pb.ExecMessage_Exit{
@@ -1207,7 +1208,7 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 					return stack.Enable(err)
 				})
 
-				logrus.Debugf("|---> Started Message %s", pid)
+				bklog.G(ctx).Debugf("|---> Started Message %s", pid)
 				err = srv.Send(&pb.ExecMessage{
 					ProcessID: pid,
 					Input: &pb.ExecMessage_Started{
@@ -1246,7 +1247,7 @@ func (lbf *llbBridgeForwarder) ExecProcess(srv pb.LLBBridge_ExecProcessServer) e
 							return stack.Enable(err)
 						}
 						// no error so must be EOF
-						logrus.Debugf("|---> File Message %s, fd=%d, EOF", pid, fd)
+						bklog.G(ctx).Debugf("|---> File Message %s, fd=%d, EOF", pid, fd)
 						err = srv.Send(&pb.ExecMessage{
 							ProcessID: pid,
 							Input: &pb.ExecMessage_File{
@@ -1288,7 +1289,7 @@ func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
 		<-ctx.Done()
 		conn.Close()
 	}()
-	logrus.Debugf("serving grpc connection")
+	bklog.G(ctx).Debugf("serving grpc connection")
 	(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
 }
 

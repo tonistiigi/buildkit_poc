@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/pkg/userns"
 	"github.com/docker/docker/pkg/idtools"
@@ -24,7 +26,6 @@ import (
 	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/locker"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/grpc/codes"
 )
@@ -120,7 +121,7 @@ func (g *cacheRefGetter) getRefCacheDirNoCache(ctx context.Context, key string, 
 		locked := false
 		for _, si := range sis {
 			if mRef, err := g.cm.GetMutable(ctx, si.ID()); err == nil {
-				logrus.Debugf("reusing ref for cache dir: %s", mRef.ID())
+				bklog.G(ctx).Debugf("reusing ref for cache dir: %s", mRef.ID())
 				return mRef, nil
 			} else if errors.Is(err, cache.ErrLocked) {
 				locked = true

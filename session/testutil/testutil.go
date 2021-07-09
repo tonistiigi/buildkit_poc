@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/moby/buildkit/util/bklog"
 )
 
 // Handler is function called to handle incoming connection
@@ -22,7 +22,7 @@ func TestStream(handler Handler) Dialer {
 		go func() {
 			err := handler(context.TODO(), s1, meta)
 			if err != nil {
-				logrus.Error(err)
+				bklog.G(ctx).Error(err)
 			}
 			s1.Close()
 		}()

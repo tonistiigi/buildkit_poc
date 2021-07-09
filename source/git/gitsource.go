@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/client"
@@ -30,7 +32,6 @@ import (
 	"github.com/moby/buildkit/util/progress/logs"
 	"github.com/moby/locker"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -86,7 +87,7 @@ func (gs *gitSource) mountRemote(ctx context.Context, remote string, auth []stri
 		if err != nil {
 			if errors.Is(err, cache.ErrLocked) {
 				// should never really happen as no other function should access this metadata, but lets be graceful
-				logrus.Warnf("mutable ref for %s  %s was locked: %v", redactCredentials(remote), si.ID(), err)
+				bklog.G(ctx).Warnf("mutable ref for %s  %s was locked: %v", redactCredentials(remote), si.ID(), err)
 				continue
 			}
 			return "", nil, errors.Wrapf(err, "failed to get mutable ref for %s", redactCredentials(remote))
