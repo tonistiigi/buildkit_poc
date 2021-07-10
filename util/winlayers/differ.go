@@ -242,9 +242,6 @@ func makeWindowsLayer(w io.Writer) (io.Writer, func(error), chan error) {
 					return err
 				}
 				h.Name = "Files/" + h.Name
-				if h.Linkname != "" {
-					h.Linkname = "Files/" + h.Linkname
-				}
 				prepareWinHeader(h)
 				addSecurityDescriptor(h)
 				if err := tarWriter.WriteHeader(h); err != nil {
