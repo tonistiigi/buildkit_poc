@@ -239,6 +239,8 @@ github.com/docker/go-events
 github.com/docker/go-metrics
 # github.com/docker/go-units v0.4.0
 github.com/docker/go-units
+# github.com/felixge/httpsnoop v1.0.2
+github.com/felixge/httpsnoop
 # github.com/gofrs/flock v0.7.3
 github.com/gofrs/flock
 # github.com/gogo/googleapis v1.4.0
@@ -387,6 +389,10 @@ go.opencensus.io/trace/tracestate
 go.opentelemetry.io/contrib
 # go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.21.0
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+# go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.21.0 => github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/httptrace/otelhttptrace v0.0.0-20210712071554-2d642f7c9491
+go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace
+# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.21.0 => github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/otelhttp v0.0.0-20210712071554-2d642f7c9491
+go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 # go.opentelemetry.io/otel v1.0.0-RC1
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
@@ -412,6 +418,14 @@ go.opentelemetry.io/otel/exporters/otlp/otlptrace/internal/tracetransform
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
 # go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.0.0-RC1
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp
+# go.opentelemetry.io/otel/internal/metric v0.21.0
+go.opentelemetry.io/otel/internal/metric/global
+# go.opentelemetry.io/otel/metric v0.21.0
+go.opentelemetry.io/otel/metric
+go.opentelemetry.io/otel/metric/global
+go.opentelemetry.io/otel/metric/number
+go.opentelemetry.io/otel/metric/registry
+go.opentelemetry.io/otel/metric/unit
 # go.opentelemetry.io/otel/sdk v1.0.0-RC1
 go.opentelemetry.io/otel/sdk/instrumentation
 go.opentelemetry.io/otel/sdk/internal

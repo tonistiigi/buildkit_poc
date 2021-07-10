@@ -55,6 +55,8 @@ require (
 	github.com/urfave/cli v1.22.2
 	go.etcd.io/bbolt v1.3.5
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.21.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.21.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.21.0
 	go.opentelemetry.io/otel v1.0.0-RC1
 	go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.0-RC1
@@ -73,3 +75,7 @@ require (
 )
 
 replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20210609100121-ef4d47340142+incompatible
+
+replace go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp => github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/otelhttp v0.0.0-20210712071554-2d642f7c9491
+
+replace go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace => github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/httptrace/otelhttptrace v0.0.0-20210712071554-2d642f7c9491

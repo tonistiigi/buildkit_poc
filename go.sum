@@ -416,6 +416,8 @@ github.com/evanphx/json-patch v4.2.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLi
 github.com/evanphx/json-patch v4.9.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLiYLvXMP4fmwYFNcr97nuDLSk=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/fatih/color v1.9.0/go.mod h1:eQcE1qtQxscV5RaZvpXrrb8Drkc3/DdQ+uUYCNjL+zU=
+github.com/felixge/httpsnoop v1.0.2 h1:+nS9g82KMXccJ/wp0zyRW9ZBHFETmMGtkk+2CTTrW4o=
+github.com/felixge/httpsnoop v1.0.2/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568/go.mod h1:xEzjJPgXI435gkrCt3MPfRiAkVrwSbHsst4LCFVfpJc=
 github.com/form3tech-oss/jwt-go v3.2.2+incompatible/go.mod h1:pbq4aXjuKjdthFRnoDwaVPLA+WlJuPGy+QneDUgJi2k=
 github.com/fortytw2/leaktest v1.2.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHquHwclZch5g=
@@ -1068,6 +1070,10 @@ github.com/tonistiigi/fsutil v0.0.0-20210609172227-d72af97c0eaf h1:L0ixhsTk9j+dV
 github.com/tonistiigi/fsutil v0.0.0-20210609172227-d72af97c0eaf/go.mod h1:lJAxK//iyZ3yGbQswdrPTxugZIDM7sd4bEsD0x3XMHk=
 github.com/tonistiigi/go-actions-cache v0.0.0-20210206051143-d2e2f65e1fd4 h1:aYoTVJ6p9+bYgia+1zRtxV4Ghc3SUjnn32FpKC+TQRA=
 github.com/tonistiigi/go-actions-cache v0.0.0-20210206051143-d2e2f65e1fd4/go.mod h1:dNS+PPTqGnSl80x3wEyWWCHeON5xiBGtcM0uD6CgHNU=
+github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/httptrace/otelhttptrace v0.0.0-20210712071554-2d642f7c9491 h1:MvHNp0tS8Rtyw3TP4P7y0rvDV3N8Ch59OZkADb/TqVY=
+github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/httptrace/otelhttptrace v0.0.0-20210712071554-2d642f7c9491/go.mod h1:a9cocRplhIBkUAJmak+BPDx+LVL7cTmqUPB0uBcTA4k=
+github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/otelhttp v0.0.0-20210712071554-2d642f7c9491 h1:ZnMNigmwqyxzawJDa/d6dRT6wUBXUmk3eoQGp40q284=
+github.com/tonistiigi/opentelemetry-go-contrib/instrumentation/net/http/otelhttp v0.0.0-20210712071554-2d642f7c9491/go.mod h1:JQAtechjxLEL81EjmbRwxBq/XEzGaHcsPuDHAx54hg4=
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea h1:SXhTLE6pb6eld/v/cCndK0AMpt1wiVFb/YYmqB3/QG0=
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea/go.mod h1:WPnis/6cRcDZSUvVmezrxJPkiO87ThFYsoUiMwWNDJk=
 github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f h1:DLpt6B5oaaS8jyXHa9VA4rrZloBVPVXeCtrOsrFauxc=
@@ -1148,6 +1154,10 @@ go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.0.0-RC1 h1:ZO
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.0.0-RC1/go.mod h1:cDwRc2Jrh5Gku1peGK8p9rRuX/Uq2OtVmLicjlw2WYU=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.0.0-RC1 h1:zoRUmPIQOAhkiXjoZ/BJUd6A9Ug1M/sEJgrEI68m3dU=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.0.0-RC1/go.mod h1:OYKzEoxgXFvehW7X12WYT4/a2BlASJK9l7RtG4A91fg=
+go.opentelemetry.io/otel/internal/metric v0.21.0 h1:gZlIBo5O51hZOOZz8vEcuRx/l5dnADadKfpT70AELoo=
+go.opentelemetry.io/otel/internal/metric v0.21.0/go.mod h1:iOfAaY2YycsXfYD4kaRSbLx2LKmfpKObWBEv9QK5zFo=
+go.opentelemetry.io/otel/metric v0.21.0 h1:ZtcJlHqVE4l8Su0WOLOd9fEPheJuYEiQ0wr9wv2p25I=
+go.opentelemetry.io/otel/metric v0.21.0/go.mod h1:JWCt1bjivC4iCrz/aCrM1GSw+ZcvY44KCbaeeRhzHnc=
 go.opentelemetry.io/otel/oteltest v1.0.0-RC1 h1:G685iP3XiskCwk/z0eIabL55XUl2gk0cljhGk9sB0Yk=
 go.opentelemetry.io/otel/oteltest v1.0.0-RC1/go.mod h1:+eoIG0gdEOaPNftuy1YScLr1Gb4mL/9lpDkZ0JjMRq4=
 go.opentelemetry.io/otel/sdk v1.0.0-RC1 h1:Sy2VLOOg24bipyC29PhuMXYNJrLsxkie8hyI7kUlG9Q=
