@@ -314,6 +314,8 @@ func (e *execOp) Exec(ctx context.Context, g session.Group, inputs []solver.Resu
 		Env:            e.op.Meta.Env,
 		Cwd:            e.op.Meta.Cwd,
 		User:           e.op.Meta.User,
+		RedirectReads:  e.op.Meta.RedirectReads,
+		RedirectWrites: e.op.Meta.RedirectWrites,
 		Hostname:       e.op.Meta.Hostname,
 		ReadonlyRootFS: p.ReadonlyRootFS,
 		ExtraHosts:     extraHosts,

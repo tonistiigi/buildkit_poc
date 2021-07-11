@@ -15,15 +15,22 @@ import (
 type contextKeyT string
 
 var (
-	keyArgs      = contextKeyT("llb.exec.args")
-	keyDir       = contextKeyT("llb.exec.dir")
-	keyEnv       = contextKeyT("llb.exec.env")
-	keyUser      = contextKeyT("llb.exec.user")
-	keyHostname  = contextKeyT("llb.exec.hostname")
-	keyExtraHost = contextKeyT("llb.exec.extrahost")
-	keyPlatform  = contextKeyT("llb.platform")
-	keyNetwork   = contextKeyT("llb.network")
-	keySecurity  = contextKeyT("llb.security")
+	keyArgs           = contextKeyT("llb.exec.args")
+	keyDir            = contextKeyT("llb.exec.dir")
+	keyEnv            = contextKeyT("llb.exec.env")
+	keyUser           = contextKeyT("llb.exec.user")
+	keyHostname       = contextKeyT("llb.exec.hostname")
+	keyRedirectsRead  = contextKeyT("llb.exec.redirectsread")
+	keyRedirectsWrite = contextKeyT("llb.exec.redirectswrite")
+	keyExtraHost      = contextKeyT("llb.exec.extrahost")
+	keyPlatform       = contextKeyT("llb.platform")
+	keyNetwork        = contextKeyT("llb.network")
+	keySecurity       = contextKeyT("llb.security")
+)
+
+const (
+	RedirectRead  = "read"
+	RedirectWrite = "write"
 )
 
 func AddEnvf(key, value string, v ...interface{}) StateOption {
@@ -141,6 +148,55 @@ func getUser(s State) func(context.Context, *Constraints) (string, error) {
 			return v.(string), nil
 		}
 		return "", nil
+	}
+}
+
+func Redirect(rw string, fd uint32, filename string) StateOption {
+	return func(s State) State {
+		var key contextKeyT
+		switch rw {
+		case RedirectRead:
+			key = keyRedirectsRead
+		case RedirectWrite:
+			key = keyRedirectsWrite
+		default:
+			key = keyRedirectsRead
+		}
+
+		return s.withValue(key, func(ctx context.Context, c *Constraints) (interface{}, error) {
+			v, err := getRedirects(s, rw)(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			if v == nil {
+				v = make(map[uint32]string)
+			}
+			v[fd] = filename
+			return v, nil
+		})
+	}
+}
+
+func getRedirects(s State, rw string) func(context.Context, *Constraints) (map[uint32]string, error) {
+	return func(ctx context.Context, c *Constraints) (map[uint32]string, error) {
+		var key contextKeyT
+		switch rw {
+		case RedirectRead:
+			key = keyRedirectsRead
+		case RedirectWrite:
+			key = keyRedirectsWrite
+		default:
+			key = keyRedirectsRead
+		}
+
+		v, err := s.getValue(key)(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		if v != nil {
+			return v.(map[uint32]string), nil
+		}
+		return nil, nil
 	}
 }
 

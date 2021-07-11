@@ -332,7 +332,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 		})
 	}
 
-	err = w.run(runCtx, id, bundle, process)
+	err = w.run(runCtx, id, bundle, rootFSPath, process)
 	close(ended)
 	return exitError(ctx, err)
 }
@@ -424,7 +424,7 @@ func (w *runcExecutor) Exec(ctx context.Context, id string, process executor.Pro
 		spec.Process.Env = process.Meta.Env
 	}
 
-	err = w.exec(ctx, id, state.Bundle, spec.Process, process)
+	err = w.exec(ctx, id, state.Bundle, spec.Root.Path, spec.Process, process)
 	return exitError(ctx, err)
 }
 

@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"os"
+	"path"
 	"syscall"
 	"time"
 
 	"github.com/containerd/console"
+	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/moby/buildkit/executor"
@@ -22,8 +24,8 @@ func updateRuncFieldsForHostOS(runtime *runc.Runc) {
 	runtime.PdeathSignal = syscall.SIGKILL // this can still leak the process
 }
 
-func (w *runcExecutor) run(ctx context.Context, id, bundle string, process executor.ProcessInfo) error {
-	return w.callWithIO(ctx, id, bundle, process, func(ctx context.Context, started chan<- int, io runc.IO) error {
+func (w *runcExecutor) run(ctx context.Context, id, bundle string, rootfs string, process executor.ProcessInfo) error {
+	return w.callWithIO(ctx, id, bundle, rootfs, process, func(ctx context.Context, started chan<- int, io runc.IO) error {
 		_, err := w.runc.Run(ctx, id, bundle, &runc.CreateOpts{
 			NoPivot: w.noPivot,
 			Started: started,
@@ -33,8 +35,8 @@ func (w *runcExecutor) run(ctx context.Context, id, bundle string, process execu
 	})
 }
 
-func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo) error {
-	return w.callWithIO(ctx, id, bundle, process, func(ctx context.Context, started chan<- int, io runc.IO) error {
+func (w *runcExecutor) exec(ctx context.Context, id, bundle string, rootfs string, specsProcess *specs.Process, process executor.ProcessInfo) error {
+	return w.callWithIO(ctx, id, bundle, rootfs, process, func(ctx context.Context, started chan<- int, io runc.IO) error {
 		return w.runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
 			Started: started,
 			IO:      io,
@@ -44,12 +46,20 @@ func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO) error
 
-func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, call runcCall) error {
+func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle, rootfs string, process executor.ProcessInfo, call runcCall) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if !process.Meta.Tty {
-		return call(ctx, nil, &forwardIO{stdin: process.Stdin, stdout: process.Stdout, stderr: process.Stderr})
+		redirects := newRedirects(rootfs, process.Meta.Cwd).setup(process.Stdin, process.Stdout, process.Stderr)
+		for fd, content := range process.Meta.RedirectReads {
+			redirects.redirectRead(fd, content)
+		}
+		for fd, content := range process.Meta.RedirectWrites {
+			redirects.redirectWrite(fd, content)
+		}
+		defer redirects.teardown()
+		return call(ctx, nil, &forwardIO{stdin: redirects.stdin, stdout: redirects.stdout, stderr: redirects.stderr})
 	}
 
 	ptm, ptsName, err := console.NewPty()
@@ -145,16 +155,91 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 		}
 	})
 
+	redirects := newRedirects(rootfs, process.Meta.Cwd).setup(pts, pts, pts)
+	for fd, content := range process.Meta.RedirectReads {
+		redirects.redirectRead(fd, content)
+	}
+	for fd, content := range process.Meta.RedirectWrites {
+		redirects.redirectWrite(fd, content)
+	}
+
 	runcIO := &forwardIO{}
 	if process.Stdin != nil {
-		runcIO.stdin = pts
+		runcIO.stdin = redirects.stdin
 	}
 	if process.Stdout != nil {
-		runcIO.stdout = pts
+		runcIO.stdout = redirects.stdout
 	}
 	if process.Stderr != nil {
-		runcIO.stderr = pts
+		runcIO.stderr = redirects.stderr
 	}
 
 	return call(ctx, started, runcIO)
+}
+
+type redirector struct {
+	root string
+	cwd  string
+
+	stdin  io.ReadCloser
+	stdout io.WriteCloser
+	stderr io.WriteCloser
+	extra  []*os.File
+
+	closers []io.Closer
+}
+
+func newRedirects(root string, cwd string) *redirector {
+	return &redirector{
+		root: root,
+		cwd:  cwd,
+	}
+}
+
+func (r *redirector) setup(stdin io.ReadCloser, stdout, stderr io.WriteCloser) *redirector {
+	r.stdin = stdin
+	r.stdout = stdout
+	r.stderr = stderr
+	r.extra = []*os.File{}
+	return r
+}
+
+func (r *redirector) teardown() *redirector {
+	for _, closer := range r.closers {
+		closer.Close()
+	}
+	return r
+}
+
+func (r *redirector) redirectRead(fd uint32, filename string) {
+	filename = path.Join(r.cwd, filename)
+	filename, err := fs.RootPath(r.root, filename)
+	if err != nil {
+		panic(err)
+	}
+
+	f, err := os.Open(filename)
+	if err != nil {
+		panic(err)
+	}
+	r.closers = append(r.closers, f)
+
+	switch fd {
+	case 0:
+		r.stdin = f
+	case 1:
+		panic("cannot use read-only file as stdout")
+	case 2:
+		panic("cannot use read-only file as stderr")
+	default:
+		idx := fd - 3
+		if int(idx) >= len(r.extra) {
+			r.extra = r.extra[:idx+1]
+		}
+		r.extra[idx] = f
+	}
+}
+
+func (r *redirector) redirectWrite(fd uint32, filename string) {
+	panic("unimplemented")
 }

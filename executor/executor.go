@@ -14,6 +14,8 @@ type Meta struct {
 	Env            []string
 	User           string
 	Cwd            string
+	RedirectReads  map[uint32]string
+	RedirectWrites map[uint32]string
 	Hostname       string
 	Tty            bool
 	ReadonlyRootFS bool

@@ -58,6 +58,8 @@ message Meta {
 	ProxyEnv proxy_env = 5;
 	repeated HostIP extraHosts = 6;
 	string hostname = 7;
+	map<uint32, string> redirectReads = 8;
+	map<uint32, string> redirectWrites = 9;
 }
 
 enum NetMode {

@@ -185,12 +185,23 @@ func (e *ExecOp) Marshal(ctx context.Context, c *Constraints) (digest.Digest, []
 		return "", nil, nil, nil, err
 	}
 
+	redirectReads, err := getRedirects(e.base, RedirectRead)(ctx, c)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+	redirectWrites, err := getRedirects(e.base, RedirectWrite)(ctx, c)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
 	meta := &pb.Meta{
-		Args:     args,
-		Env:      env.ToArray(),
-		Cwd:      cwd,
-		User:     user,
-		Hostname: hostname,
+		Args:           args,
+		Env:            env.ToArray(),
+		Cwd:            cwd,
+		User:           user,
+		Hostname:       hostname,
+		RedirectReads:  redirectReads,
+		RedirectWrites: redirectWrites,
 	}
 	extraHosts, err := getExtraHosts(e.base)(ctx, c)
 	if err != nil {
@@ -489,6 +500,12 @@ func Shlexf(str string, v ...interface{}) RunOption {
 func Args(a []string) RunOption {
 	return runOptionFunc(func(ei *ExecInfo) {
 		ei.State = args(a...)(ei.State)
+	})
+}
+
+func AddRedirect(rw string, fd uint32, filename string) RunOption {
+	return runOptionFunc(func(ei *ExecInfo) {
+		ei.State = ei.State.AddRedirect(rw, fd, filename)
 	})
 }
 

@@ -393,6 +393,10 @@ func (s State) With(so ...StateOption) State {
 	return s
 }
 
+func (s State) AddRedirect(rw string, fd uint32, filename string) State {
+	return Redirect(rw, fd, filename)(s)
+}
+
 func (s State) AddExtraHost(host string, ip net.IP) State {
 	return extraHost(host, ip)(s)
 }
