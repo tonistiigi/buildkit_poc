@@ -83,29 +83,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        pkg:
+          - ./client ./cmd/buildctl ./worker/containerd ./solver ./frontend
+          - ./frontend/dockerfile
+        worker:
+          - containerd
+          - containerd-1.4
+          - containerd-snapshotter-stargz
+          - oci
+          - oci-rootless
+          - oci-snapshotter-stargz
+        typ:
+          - integration
+          - dockerfile
+        exclude:
+          - pkg: ./client ./cmd/buildctl ./worker/containerd ./solver ./frontend
+            typ: dockerfile
         include:
-          -
-            pkg: ./client
-            typ: integration
-          -
-            pkg: ./cmd/buildctl ./worker/containerd
-            typ: integration
-          -
-            pkg: ./solver
-            typ: integration
-          -
-            pkg: ''
+          - pkg: ./...
             skip-integration-tests: 1
             typ: integration gateway
-          -
-            pkg: ./frontend
-            typ: ''
-          -
-            pkg: ./frontend/dockerfile
-            typ: ''
-          -
-            pkg: ./frontend/dockerfile
-            typ: dockerfile
     steps:
       -
         name: Checkout
@@ -135,12 +132,13 @@ jobs:
         with:
           driver-opts: image=${{ env.REPO_SLUG_ORIGIN }}
       -
-        name: Test ${{ matrix.pkg }} ${{ matrix.typ }}
+        name: Test pkg=${{ matrix.pkg }} ; typ=${{ matrix.typ }} ; skipit=${{ matrix.skip-integration-tests }} ; worker=${{ matrix.worker }}
         run: |
           ./hack/test ${{ matrix.typ }}
-          mv ./coverage/coverage.txt ./coverage/coverage-${{ github.job }}-$(echo "${{ matrix.coverage-pkg }}-${{ matrix.skip-integration-tests }}-${{ matrix.typ }}" | tr -dc '[:alnum:]-\n\r' | tr '[:upper:]' '[:lower:]').txt
+          mv ./coverage/coverage.txt ./coverage/coverage-${{ github.job }}-$(echo "${{ matrix.pkg }}-${{ matrix.skip-integration-tests }}-${{ matrix.typ }}-${{ matrix.worker }}" | tr -dc '[:alnum:]-\n\r' | tr '[:upper:]' '[:lower:]').txt
         env:
           TEST_COVERAGE: 1
+          TEST_WORKER: ${{ matrix.worker }}
           TESTPKGS: ${{ matrix.pkg }}
           TESTFLAGS: -v --parallel=6 --timeout=20m
           SKIP_INTEGRATION_TESTS: ${{ matrix.skip-integration-tests }}
