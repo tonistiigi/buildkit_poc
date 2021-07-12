@@ -19,6 +19,9 @@ clean: FORCE
 test:
 	./hack/test integration gateway dockerfile
 
+fuzz:
+	./hack/fuzz
+
 lint:
 	./hack/lint
 
