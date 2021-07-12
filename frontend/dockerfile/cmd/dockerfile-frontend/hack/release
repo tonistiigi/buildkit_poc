@@ -65,17 +65,6 @@ if [ "$PUSH" = "push" ]; then
   pushFlag="push=true"
 fi
 
-importCacheFlags=""
-exportCacheFlags=""
-if [ "$GITHUB_ACTIONS" = "true" ]; then
-  if [ -n "$cacheRefFrom" ]; then
-    importCacheFlags="--cache-from=type=local,src=$cacheRefFrom"
-  fi
-  if [ -n "$cacheRefTo" ]; then
-    exportCacheFlags="--cache-to=type=local,dest=$cacheRefTo"
-  fi
-fi
-
 case $TYP in
 "master")
   tagf=./frontend/dockerfile/release/$TAG/tags
@@ -90,7 +79,7 @@ case $TYP in
     pushTag=${pushTag}-$TAG
   fi
 
-  buildxCmd build $importCacheFlags $exportCacheFlags \
+  buildxCmd build $cacheFromFlags $cacheToFlags \
     --platform "$PLATFORMS" \
     --build-arg "CHANNEL=$TAG" \
     --build-arg "BUILDTAGS=$buildTags" \
@@ -108,7 +97,7 @@ case $TYP in
   fi
   buildTags=$(cat $tagf)
 
-  buildxCmd build $importCacheFlags $exportCacheFlags \
+  buildxCmd build $cacheFromFlags $cacheToFlags \
     --platform "$PLATFORMS" \
     --build-arg "CHANNEL=$TAG" \
     --build-arg "BUILDTAGS=$buildTags" \
@@ -135,7 +124,7 @@ case $TYP in
 
     tmp=$(mktemp -d -t buildid.XXXXXXXXXX)
     dt=$(date +%Y%m%d)
-    buildxCmd build $importCacheFlags $exportCacheFlags \
+    buildxCmd build $cacheFromFlags $cacheToFlags \
       --platform "$PLATFORMS" \
       --target "buildid" \
       --build-arg "CHANNEL=$TAG" \
@@ -150,7 +139,7 @@ case $TYP in
       buildid=$(cat $tmp/buildid)
       echo "buildid: $buildid"
 
-      buildxCmd build $importCacheFlags $exportCacheFlags \
+      buildxCmd build $cacheFromFlags $cacheToFlags \
         --platform "$PLATFORMS" \
         --build-arg "CHANNEL=$TAG" \
         --build-arg "BUILDTAGS=$buildTags" \

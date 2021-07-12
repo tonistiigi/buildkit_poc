@@ -5,8 +5,8 @@ export BUILDX_NO_DEFAULT_LOAD=true
 : ${PREFER_LEGACY=}
 : ${CI=}
 : ${GITHUB_ACTIONS=}
-: ${CACHEDIR_FROM=}
-: ${CACHEDIR_TO=}
+: ${CACHE_FROM=}
+: ${CACHE_TO=}
 
 if [ "$PREFER_BUILDCTL" = "1" ]; then
   echo >&2 "WARNING: PREFER_BUILDCTL is no longer supported. Ignoring."
@@ -41,18 +41,23 @@ buildxCmd() {
   fi
 }
 
-cacheType=""
-cacheRefFrom=""
-cacheRefTo=""
 currentref=""
+currentcontext="."
+cacheFromFlags=""
+cacheToFlags=""
 if [ "$GITHUB_ACTIONS" = "true" ]; then
   currentref="git://github.com/$GITHUB_REPOSITORY#$GITHUB_REF"
-  cacheType="local"
-  cacheRefFrom="$CACHEDIR_FROM"
-  cacheRefTo="$CACHEDIR_TO"
+  if [ -n "$CACHE_FROM" ]; then
+    for cfrom in $CACHE_FROM; do
+      cacheFromFlags="${cacheFromFlags}--cache-from=$cfrom "
+    done
+  fi
+  if [ -n "$CACHE_TO" ]; then
+    for cto in $CACHE_TO; do
+      cacheToFlags="${cacheToFlags}--cache-to=$cto "
+    done
+  fi
 fi
-
-currentcontext="."
 if [ -n "$currentref" ]; then
   currentcontext="--build-arg BUILDKIT_CONTEXT_KEEP_GIT_DIR=1 $currentref"
 fi

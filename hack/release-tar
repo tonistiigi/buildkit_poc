@@ -17,14 +17,7 @@ if [ -z "$TAG" ] || [ -z "$OUT" ]; then
   usage
 fi
 
-importCacheFlags=""
-if [[ -n "$cacheRefFrom" ]] && [[ "$cacheType" = "local" ]]; then
-  for ref in $cacheRefFrom; do
-    importCacheFlags="$importCacheFlags--cache-from=type=local,src=$ref "
-  done
-fi
-
-buildxCmd build $importCacheFlags \
+buildxCmd build $cacheFromFlags \
   --target release \
   --platform "$PLATFORMS" \
   --output "type=local,dest=$OUT" \

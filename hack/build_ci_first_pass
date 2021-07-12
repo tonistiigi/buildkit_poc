@@ -14,25 +14,14 @@ if [ -z "$TYP" ]; then
   usage
 fi
 
-importCacheFlags=""
-exportCacheFlags=""
-if [ "$GITHUB_ACTIONS" = "true" ]; then
-  if [ -n "$cacheRefFrom" ]; then
-    importCacheFlags="--cache-from=type=local,src=$cacheRefFrom"
-  fi
-  if [ -n "$cacheRefTo" ]; then
-    exportCacheFlags="--cache-to=type=local,dest=$cacheRefTo"
-  fi
-fi
-
 case $TYP in
   "binaries")
-    buildxCmd build $importCacheFlags $exportCacheFlags \
+    buildxCmd build $cacheFromFlags $cacheToFlags \
       --target "binaries" \
       $currentcontext
     ;;
   "integration-tests")
-    buildxCmd build $importCacheFlags $exportCacheFlags \
+    buildxCmd build $cacheFromFlags $cacheToFlags \
       --target "integration-tests-base" \
       $currentcontext
     ;;
