@@ -62,6 +62,8 @@ const (
 	CapMetaIgnoreCache apicaps.CapID = "meta.ignorecache"
 	CapMetaDescription apicaps.CapID = "meta.description"
 	CapMetaExportCache apicaps.CapID = "meta.exportcache"
+
+	CapRemoteCacheGHA apicaps.CapID = "cache.gha"
 )
 
 func init() {
@@ -336,6 +338,12 @@ func init() {
 
 	Caps.Init(apicaps.Cap{
 		ID:      CapMetaExportCache,
+		Enabled: true,
+		Status:  apicaps.CapStatusExperimental,
+	})
+
+	Caps.Init(apicaps.Cap{
+		ID:      CapRemoteCacheGHA,
 		Enabled: true,
 		Status:  apicaps.CapStatusExperimental,
 	})

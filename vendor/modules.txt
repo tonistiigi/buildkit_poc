@@ -172,6 +172,8 @@ github.com/coreos/go-systemd/v22/daemon
 github.com/cpuguy83/go-md2man/v2/md2man
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
+# github.com/dgrijalva/jwt-go v3.2.0+incompatible
+github.com/dgrijalva/jwt-go
 # github.com/docker/cli v20.10.7+incompatible
 github.com/docker/cli/cli/config
 github.com/docker/cli/cli/config/configfile
@@ -363,6 +365,8 @@ github.com/tonistiigi/fsutil
 github.com/tonistiigi/fsutil/copy
 github.com/tonistiigi/fsutil/prefix
 github.com/tonistiigi/fsutil/types
+# github.com/tonistiigi/go-actions-cache v0.0.0-20210206051143-d2e2f65e1fd4
+github.com/tonistiigi/go-actions-cache
 # github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 github.com/tonistiigi/units
 # github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
