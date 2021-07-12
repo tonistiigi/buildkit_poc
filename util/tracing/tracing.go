@@ -3,9 +3,11 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"net/http/httptrace"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -53,81 +55,17 @@ func ContextWithSpanFromContext(ctx, ctx2 context.Context) context.Context {
 	return ctx
 }
 
-var DefaultTransport http.RoundTripper = &Transport{
-	RoundTripper: NewTransport(http.DefaultTransport),
-}
+var DefaultTransport http.RoundTripper = NewTransport(http.DefaultTransport)
 
 var DefaultClient = &http.Client{
 	Transport: DefaultTransport,
 }
 
-var propagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
-
-type Transport struct {
-	http.RoundTripper
-}
-
 func NewTransport(rt http.RoundTripper) http.RoundTripper {
-	// TODO: switch to otelhttp. needs upstream updates to avoid transport-global tracer
-	return &Transport{
-		RoundTripper: rt,
-	}
-}
-
-func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	span := trace.SpanFromContext(req.Context())
-	if !span.SpanContext().IsValid() { // no tracer connected with either request or transport
-		return t.RoundTripper.RoundTrip(req)
-	}
-
-	ctx, span := span.TracerProvider().Tracer("").Start(req.Context(), req.Method)
-
-	req = req.WithContext(ctx)
-	span.SetAttributes(semconv.HTTPClientAttributesFromHTTPRequest(req)...)
-	propagators.Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-	resp, err := t.RoundTripper.RoundTrip(req)
-	if err != nil {
-		span.RecordError(err)
-		span.End()
-		return resp, err
-	}
-
-	span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(resp.StatusCode)...)
-	span.SetStatus(semconv.SpanStatusFromHTTPStatusCode(resp.StatusCode))
-
-	if req.Method == "HEAD" {
-		span.End()
-	} else {
-		resp.Body = &wrappedBody{ctx: ctx, span: span, body: resp.Body}
-	}
-
-	return resp, err
-}
-
-type wrappedBody struct {
-	ctx  context.Context
-	span trace.Span
-	body io.ReadCloser
-}
-
-var _ io.ReadCloser = &wrappedBody{}
-
-func (wb *wrappedBody) Read(b []byte) (int, error) {
-	n, err := wb.body.Read(b)
-
-	switch err {
-	case nil:
-		// nothing to do here but fall through to the return
-	case io.EOF:
-		wb.span.End()
-	default:
-		wb.span.RecordError(err)
-	}
-	return n, err
-}
-
-func (wb *wrappedBody) Close() error {
-	wb.span.End()
-	return wb.body.Close()
+	return otelhttp.NewTransport(rt,
+		otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})),
+		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
+		}),
+	)
 }
