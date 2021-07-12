@@ -14,12 +14,13 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/diff"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
+	log "github.com/moby/buildkit/util/bklog"
 )
 
 const (

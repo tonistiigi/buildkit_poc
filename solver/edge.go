@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/moby/buildkit/solver/internal/pipe"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -876,10 +878,10 @@ func (e *edge) loadCache(ctx context.Context) (interface{}, error) {
 	rec := getBestResult(recs)
 	e.cacheRecordsLoaded[rec.ID] = struct{}{}
 
-	logrus.Debugf("load cache for %s with %s", e.edge.Vertex.Name(), rec.ID)
+	bklog.G(ctx).Debugf("load cache for %s with %s", e.edge.Vertex.Name(), rec.ID)
 	res, err := e.op.LoadCache(ctx, rec)
 	if err != nil {
-		logrus.Debugf("load cache for %s err: %v", e.edge.Vertex.Name(), err)
+		bklog.G(ctx).Debugf("load cache for %s err: %v", e.edge.Vertex.Name(), err)
 		return nil, errors.Wrap(err, "failed to load cache")
 	}
 

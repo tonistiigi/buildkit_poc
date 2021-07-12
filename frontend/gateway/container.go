@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/frontend/gateway/client"
@@ -20,7 +22,6 @@ import (
 	utilsystem "github.com/moby/buildkit/util/system"
 	"github.com/moby/buildkit/worker"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -331,7 +332,7 @@ func (gwCtr *gatewayContainer) Start(ctx context.Context, req client.StartReques
 	if !started {
 		startedCh := make(chan struct{})
 		gwProc.errGroup.Go(func() error {
-			logrus.Debugf("Starting new container for %s with args: %q", gwCtr.id, procInfo.Meta.Args)
+			bklog.G(gwCtr.ctx).Debugf("Starting new container for %s with args: %q", gwCtr.id, procInfo.Meta.Args)
 			err := gwCtr.executor.Run(ctx, gwCtr.id, gwCtr.rootFS, gwCtr.mounts, procInfo, startedCh)
 			return stack.Enable(err)
 		})
@@ -341,7 +342,7 @@ func (gwCtr *gatewayContainer) Start(ctx context.Context, req client.StartReques
 		}
 	} else {
 		gwProc.errGroup.Go(func() error {
-			logrus.Debugf("Execing into container %s with args: %q", gwCtr.id, procInfo.Meta.Args)
+			bklog.G(gwCtr.ctx).Debugf("Execing into container %s with args: %q", gwCtr.id, procInfo.Meta.Args)
 			err := gwCtr.executor.Exec(ctx, gwCtr.id, procInfo)
 			return stack.Enable(err)
 		})

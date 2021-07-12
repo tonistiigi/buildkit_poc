@@ -7,9 +7,9 @@ import (
 	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
@@ -22,7 +22,7 @@ func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
 		<-ctx.Done()
 		conn.Close()
 	}()
-	logrus.Debugf("serving grpc connection")
+	bklog.G(ctx).Debugf("serving grpc connection")
 	(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
 }
 

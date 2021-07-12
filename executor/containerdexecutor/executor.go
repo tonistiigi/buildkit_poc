@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moby/buildkit/util/bklog"
+
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/mount"
@@ -26,7 +28,6 @@ import (
 	"github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 type containerdExecutor struct {
@@ -153,7 +154,7 @@ func (w *containerdExecutor) Run(ctx context.Context, id string, root executor.M
 	defer namespace.Close()
 
 	if meta.NetMode == pb.NetMode_HOST {
-		logrus.Info("enabling HostNetworking")
+		bklog.G(ctx).Info("enabling HostNetworking")
 	}
 
 	opts := []containerdoci.SpecOpts{oci.WithUIDGID(uid, gid, sgids)}
@@ -364,7 +365,7 @@ func (w *containerdExecutor) runProcess(ctx context.Context, p containerd.Proces
 				}
 				err = p.Resize(resizeCtx, size.Cols, size.Rows)
 				if err != nil {
-					logrus.Warnf("Failed to resize %s: %s", p.ID(), err)
+					bklog.G(resizeCtx).Warnf("Failed to resize %s: %s", p.ID(), err)
 				}
 			}
 		}
