@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/filters"
 	"github.com/containerd/containerd/gc"
 	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/client"
@@ -234,11 +235,11 @@ func (cm *cacheManager) GetByBlob(ctx context.Context, desc ocispec.Descriptor, 
 	md, _ := cm.md.Get(id)
 
 	rec := &cacheRecord{
-		mu:     &sync.Mutex{},
-		cm:     cm,
-		refs:   make(map[ref]struct{}),
-		parent: p,
-		md:     md,
+		cm:            cm,
+		immutableRefs: make(map[*immutableRef]struct{}),
+		parent:        p,
+		md:            md,
+		isFinalized:   true,
 	}
 
 	if err := initializeMetadata(rec, parentID, opts...); err != nil {
@@ -257,7 +258,6 @@ func (cm *cacheManager) GetByBlob(ctx context.Context, desc ocispec.Descriptor, 
 	queueBlobOnly(rec.md, blobOnly)
 	queueMediaType(rec.md, desc.MediaType)
 	queueBlobSize(rec.md, desc.Size)
-	queueCommitted(rec.md)
 
 	if err := rec.md.Commit(); err != nil {
 		return nil, err
@@ -265,7 +265,7 @@ func (cm *cacheManager) GetByBlob(ctx context.Context, desc ocispec.Descriptor, 
 
 	cm.records[id] = rec
 
-	return rec.ref(true, descHandlers), nil
+	return rec.ref(true, descHandlers)
 }
 
 // init loads all snapshots from metadata state and tries to load the records
@@ -276,9 +276,55 @@ func (cm *cacheManager) init(ctx context.Context) error {
 		return err
 	}
 
+	toRemove := make(map[string]bool)
 	for _, si := range items {
-		if _, err := cm.getRecord(ctx, si.ID()); err != nil {
-			logrus.Debugf("could not load snapshot %s: %+v", si.ID(), err)
+		// Migrate any equalMutable/equalImmutable refs from older buildkit versions to using just a single ref
+		if em := getEqualMutable(si); em != "" {
+			if emSi, exists := cm.md.Get(getEqualMutable(si)); exists {
+				clearEqualMutable(si)
+				queueSnapshotID(si, emSi.ID())
+				_, err := cm.ManagerOpt.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+					l.ID = si.ID()
+					l.Labels = map[string]string{
+						"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
+					logrus.Debugf("failed to create lease for ref %s: %+v", si.ID(), err)
+					toRemove[si.ID()] = true
+					continue
+				}
+				if err := cm.ManagerOpt.LeaseManager.AddResource(ctx, leases.Lease{ID: si.ID()}, leases.Resource{
+					ID:   emSi.ID(),
+					Type: "snapshots/" + cm.ManagerOpt.Snapshotter.Name(),
+				}); err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
+					logrus.Debugf("failed to add snapshot %s to lease: %+v", emSi.ID(), err)
+					toRemove[si.ID()] = true
+					continue
+				}
+				queueDescription(si, GetDescription(emSi))
+				setSize(si, sizeUnknown)
+				if err := si.Commit(); err != nil {
+					toRemove[si.ID()] = true
+					logrus.Debugf("failed to migrate equalMutable %s to ref %s: %+v", em, si.ID(), err)
+					continue
+				}
+				toRemove[em] = true
+			}
+		}
+	}
+
+	for _, si := range items {
+		doRemove := toRemove[si.ID()]
+		// don't call getRecord on items we're going to remove anyways as it causes them to get cached in cm.records
+		if !doRemove {
+			if _, err := cm.getRecord(ctx, si.ID()); err != nil {
+				logrus.Debugf("could not load ref %s: %+v", si.ID(), err)
+				doRemove = true
+			}
+		}
+		if doRemove {
 			cm.md.Clear(si.ID())
 			cm.LeaseManager.Delete(ctx, leases.Lease{ID: si.ID()})
 		}
@@ -332,18 +378,7 @@ func (cm *cacheManager) get(ctx context.Context, id string, opts ...RefOption) (
 	}
 
 	descHandlers := descHandlersOf(opts...)
-
-	if rec.mutable {
-		if len(rec.refs) != 0 {
-			return nil, errors.Wrapf(ErrLocked, "%s is locked", id)
-		}
-		if rec.equalImmutable != nil {
-			return rec.equalImmutable.ref(triggerUpdate, descHandlers), nil
-		}
-		return rec.mref(triggerUpdate, descHandlers).commit(ctx)
-	}
-
-	return rec.ref(triggerUpdate, descHandlers), nil
+	return rec.ref(triggerUpdate, descHandlers)
 }
 
 // getRecord returns record for id. Requires manager lock.
@@ -371,7 +406,7 @@ func (cm *cacheManager) getRecord(ctx context.Context, id string, opts ...RefOpt
 	}
 
 	if rec, ok := cm.records[id]; ok {
-		if rec.isDead() {
+		if rec.dead {
 			return nil, errors.Wrapf(errNotFound, "failed to get dead record %s", id)
 		}
 		if err := checkLazyProviders(rec); err != nil {
@@ -383,33 +418,6 @@ func (cm *cacheManager) getRecord(ctx context.Context, id string, opts ...RefOpt
 	md, ok := cm.md.Get(id)
 	if !ok {
 		return nil, errors.Wrap(errNotFound, id)
-	}
-	if mutableID := getEqualMutable(md); mutableID != "" {
-		mutable, err := cm.getRecord(ctx, mutableID)
-		if err != nil {
-			// check loading mutable deleted record from disk
-			if IsNotFound(err) {
-				cm.md.Clear(id)
-			}
-			return nil, err
-		}
-
-		// parent refs are possibly lazy so keep it hold the description handlers.
-		var dhs DescHandlers
-		if mutable.parent != nil {
-			dhs = mutable.parent.descHandlers
-		}
-		rec := &cacheRecord{
-			mu:           &sync.Mutex{},
-			cm:           cm,
-			refs:         make(map[ref]struct{}),
-			parent:       mutable.parentRef(false, dhs),
-			md:           md,
-			equalMutable: &mutableRef{cacheRecord: mutable},
-		}
-		mutable.equalImmutable = &immutableRef{cacheRecord: rec}
-		cm.records[id] = rec
-		return rec, nil
 	}
 
 	var parent *immutableRef
@@ -429,17 +437,15 @@ func (cm *cacheManager) getRecord(ctx context.Context, id string, opts ...RefOpt
 	}
 
 	rec := &cacheRecord{
-		mu:      &sync.Mutex{},
-		mutable: !getCommitted(md),
-		cm:      cm,
-		refs:    make(map[ref]struct{}),
-		parent:  parent,
-		md:      md,
+		cm:            cm,
+		md:            md,
+		parent:        parent,
+		immutableRefs: make(map[*immutableRef]struct{}),
 	}
 
 	// the record was deleted but we crashed before data on disk was removed
 	if getDeleted(md) {
-		if err := rec.remove(ctx, true); err != nil {
+		if err := rec.remove(ctx); err != nil {
 			return nil, err
 		}
 		return nil, errors.Wrapf(errNotFound, "failed to get deleted record %s", id)
@@ -451,6 +457,26 @@ func (cm *cacheManager) getRecord(ctx context.Context, id string, opts ...RefOpt
 
 	if err := setImageRefMetadata(rec, opts...); err != nil {
 		return nil, errors.Wrapf(err, "failed to append image ref metadata to ref %s", rec.ID())
+	}
+
+	rec.isFinalized = getBlobOnly(rec.md)
+	if !rec.isFinalized {
+		var info snapshots.Info
+		var err error
+		if info, err = rec.cm.Snapshotter.Stat(ctx, getSnapshotID(rec.md)); errdefs.IsNotFound(err) && rec.md.ID() != getSnapshotID(rec.md) {
+			// If there was a crash during a call to finalize, the snapshot ID could get out of sync, so check for a
+			// snapshot with the record's ID, which is what's switched to during finalize.
+			if info, err = rec.cm.Snapshotter.Stat(ctx, rec.md.ID()); err == nil {
+				queueSnapshotID(rec.md, rec.md.ID())
+				if err := rec.md.Commit(); err != nil {
+					return nil, errors.Wrapf(err, "failed to correct snapshot id metadata for ref %s", rec.md.ID())
+				}
+			}
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to stat snapshot for ref %s", rec.md.ID())
+		}
+		rec.isFinalized = info.Kind == snapshots.KindCommitted
 	}
 
 	cm.records[id] = rec
@@ -513,21 +539,23 @@ func (cm *cacheManager) New(ctx context.Context, s ImmutableRef, sess session.Gr
 		}
 	}()
 
+	snapshotID := identity.NewID()
+	opts = append(opts, withSnapshotID(snapshotID))
 	if err := cm.ManagerOpt.LeaseManager.AddResource(ctx, l, leases.Resource{
-		ID:   id,
+		ID:   snapshotID,
 		Type: "snapshots/" + cm.ManagerOpt.Snapshotter.Name(),
 	}); err != nil {
-		return nil, errors.Wrapf(err, "failed to add snapshot %s to lease", id)
+		return nil, errors.Wrapf(err, "failed to add snapshot %s to lease", snapshotID)
 	}
 
 	if cm.Snapshotter.Name() == "stargz" && parent != nil {
 		if rerr := parent.withRemoteSnapshotLabelsStargzMode(ctx, sess, func() {
-			err = cm.Snapshotter.Prepare(ctx, id, parentSnapshotID)
+			err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 		}); rerr != nil {
 			return nil, rerr
 		}
 	} else {
-		err = cm.Snapshotter.Prepare(ctx, id, parentSnapshotID)
+		err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to prepare %s", id)
@@ -536,12 +564,10 @@ func (cm *cacheManager) New(ctx context.Context, s ImmutableRef, sess session.Gr
 	md, _ := cm.md.Get(id)
 
 	rec := &cacheRecord{
-		mu:      &sync.Mutex{},
-		mutable: true,
-		cm:      cm,
-		refs:    make(map[ref]struct{}),
-		parent:  parent,
-		md:      md,
+		cm:            cm,
+		md:            md,
+		parent:        parent,
+		immutableRefs: make(map[*immutableRef]struct{}),
 	}
 
 	if err := initializeMetadata(rec, parentID, opts...); err != nil {
@@ -562,7 +588,7 @@ func (cm *cacheManager) New(ctx context.Context, s ImmutableRef, sess session.Gr
 	if parent != nil {
 		dhs = parent.descHandlers
 	}
-	return rec.mref(true, dhs), nil
+	return rec.mref(true, dhs)
 }
 
 func (cm *cacheManager) GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) {
@@ -576,26 +602,7 @@ func (cm *cacheManager) GetMutable(ctx context.Context, id string, opts ...RefOp
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	if !rec.mutable {
-		return nil, errors.Wrapf(errInvalid, "%s is not mutable", id)
-	}
-
-	if len(rec.refs) != 0 {
-		return nil, errors.Wrapf(ErrLocked, "%s is locked", id)
-	}
-
-	if rec.equalImmutable != nil {
-		if len(rec.equalImmutable.refs) != 0 {
-			return nil, errors.Wrapf(ErrLocked, "%s is locked", id)
-		}
-		delete(cm.records, rec.equalImmutable.ID())
-		if err := rec.equalImmutable.remove(ctx, false); err != nil {
-			return nil, err
-		}
-		rec.equalImmutable = nil
-	}
-
-	return rec.mref(true, descHandlersOf(opts...)), nil
+	return rec.mref(true, descHandlersOf(opts...))
 }
 
 func (cm *cacheManager) Prune(ctx context.Context, ch chan client.UsageInfo, opts ...client.PruneInfo) error {
@@ -670,26 +677,20 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 	gcMode := opt.keepBytes != 0
 	cutOff := time.Now().Add(-opt.keepDuration)
 
-	locked := map[*sync.Mutex]struct{}{}
+	locked := map[*cacheRecord]struct{}{}
 
 	for _, cr := range cm.records {
-		if _, ok := locked[cr.mu]; ok {
+		if _, ok := locked[cr]; ok {
 			continue
 		}
 		cr.mu.Lock()
 
-		// ignore duplicates that share data
-		if cr.equalImmutable != nil && len(cr.equalImmutable.refs) > 0 || cr.equalMutable != nil && len(cr.refs) == 0 {
+		if cr.dead {
 			cr.mu.Unlock()
 			continue
 		}
 
-		if cr.isDead() {
-			cr.mu.Unlock()
-			continue
-		}
-
-		if len(cr.refs) == 0 {
+		if cr.refCount() == 0 {
 			recordType := GetRecordType(cr)
 			if recordType == "" {
 				recordType = client.UsageRecordTypeRegular
@@ -709,7 +710,7 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 
 			c := &client.UsageInfo{
 				ID:         cr.ID(),
-				Mutable:    cr.mutable,
+				Mutable:    !cr.isFinalized,
 				RecordType: recordType,
 				Shared:     shared,
 			}
@@ -741,7 +742,7 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 						return err
 					}
 				} else {
-					locked[cr.mu] = struct{}{}
+					locked[cr] = struct{}{}
 					continue // leave the record locked
 				}
 			}
@@ -774,12 +775,7 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 
 	// calculate sizes here so that lock does not need to be held for slow process
 	for _, cr := range toDelete {
-		size := getSize(cr.md)
-
-		if size == sizeUnknown && cr.equalImmutable != nil {
-			size = getSize(cr.equalImmutable.md) // benefit from DiskUsage calc
-		}
-		if size == sizeUnknown {
+		if getSize(cr.md) == sizeUnknown {
 			// calling size will warm cache for next call
 			if _, err := cr.Size(ctx); err != nil {
 				return err
@@ -796,8 +792,8 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 
 		c := client.UsageInfo{
 			ID:          cr.ID(),
-			Mutable:     cr.mutable,
-			InUse:       len(cr.refs) > 0,
+			Mutable:     !cr.isFinalized,
+			InUse:       cr.refCount() > 0,
 			Size:        getSize(cr.md),
 			CreatedAt:   GetCreatedAt(cr.md),
 			Description: GetDescription(cr.md),
@@ -808,18 +804,9 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 		if cr.parent != nil {
 			c.Parent = cr.parent.ID()
 		}
-		if c.Size == sizeUnknown && cr.equalImmutable != nil {
-			c.Size = getSize(cr.equalImmutable.md) // benefit from DiskUsage calc
-		}
-
 		opt.totalSize -= c.Size
 
-		if cr.equalImmutable != nil {
-			if err1 := cr.equalImmutable.remove(ctx, false); err == nil {
-				err = err1
-			}
-		}
-		if err1 := cr.remove(ctx, true); err == nil {
+		if err1 := cr.remove(ctx); err == nil {
 			err = err1
 		}
 
@@ -880,7 +867,6 @@ type cacheUsageInfo struct {
 	usageCount  int
 	lastUsedAt  *time.Time
 	description string
-	doubleRef   bool
 	recordType  client.UsageRecordType
 	shared      bool
 	parentChain []digest.Digest
@@ -899,22 +885,16 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 
 	for id, cr := range cm.records {
 		cr.mu.Lock()
-		// ignore duplicates that share data
-		if cr.equalImmutable != nil && len(cr.equalImmutable.refs) > 0 || cr.equalMutable != nil && len(cr.refs) == 0 {
-			cr.mu.Unlock()
-			continue
-		}
 
 		usageCount, lastUsedAt := getLastUsed(cr.md)
 		c := &cacheUsageInfo{
-			refs:        len(cr.refs),
-			mutable:     cr.mutable,
+			refs:        cr.refCount(),
+			mutable:     !cr.isFinalized,
 			size:        getSize(cr.md),
 			createdAt:   GetCreatedAt(cr.md),
 			usageCount:  usageCount,
 			lastUsedAt:  lastUsedAt,
 			description: GetDescription(cr.md),
-			doubleRef:   cr.equalImmutable != nil,
 			recordType:  GetRecordType(cr),
 			parentChain: cr.parentChain(),
 		}
@@ -924,7 +904,7 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 		if cr.parent != nil {
 			c.parent = cr.parent.ID()
 		}
-		if cr.mutable && c.refs > 0 {
+		if cr.mutableRef != nil {
 			c.size = 0 // size can not be determined because it is changing
 		}
 		m[id] = c
@@ -941,9 +921,6 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 			v := m[id]
 			if v.refs == 0 && v.parent != "" {
 				m[v.parent].refs--
-				if v.doubleRef {
-					m[v.parent].refs--
-				}
 				rescan[v.parent] = struct{}{}
 			}
 			delete(rescan, id)
@@ -1051,6 +1028,12 @@ func WithRecordType(t client.UsageRecordType) RefOption {
 func WithCreationTime(tm time.Time) RefOption {
 	return func(m withMetadata) error {
 		return queueCreatedAt(m.Metadata(), tm)
+	}
+}
+
+func withSnapshotID(id string) RefOption {
+	return func(m withMetadata) error {
+		return queueSnapshotID(m.Metadata(), id)
 	}
 }
 

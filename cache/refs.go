@@ -68,18 +68,26 @@ type Mountable interface {
 	Mount(ctx context.Context, readonly bool, s session.Group) (snapshot.Mountable, error)
 }
 
-type ref interface {
-	updateLastUsed() bool
-}
-
 type cacheRecord struct {
-	cm *cacheManager
-	mu *sync.Mutex // the mutex is shared by records sharing data
+	cm     *cacheManager
+	md     *metadata.StorageItem
+	mu     sync.Mutex
+	sizeG  flightcontrol.Group
+	parent *immutableRef
 
-	mutable bool
-	refs    map[ref]struct{}
-	parent  *immutableRef
-	md      *metadata.StorageItem
+	// immutableRefs keeps track of each ref pointing to this cacheRecord that can't change the underlying snapshot
+	// data. When it's empty and mutableRef below is empty, that means there's no more unreleased pointers to this
+	// struct and the cacheRecord can be considered for deletion. We enforce that there can not be immutableRefs while
+	// mutableRef is set.
+	immutableRefs map[*immutableRef]struct{}
+
+	// mutableRef keeps track of a ref to this cacheRecord whose snapshot can be mounted read-write.
+	// We enforce that at most one mutable ref points to this cacheRecord at a time and no immutableRefs
+	// are set while mutableRef is set.
+	mutableRef *mutableRef
+
+	// isFinalized means the underlying snapshot has been committed to its driver
+	isFinalized bool
 
 	// dead means record is marked as deleted
 	dead bool
@@ -87,35 +95,68 @@ type cacheRecord struct {
 	view      string
 	viewMount snapshot.Mountable
 
-	sizeG flightcontrol.Group
-
-	// these are filled if multiple refs point to same data
-	equalMutable   *mutableRef
-	equalImmutable *immutableRef
-
 	parentChainCache []digest.Digest
 }
 
-// hold ref lock before calling
-func (cr *cacheRecord) ref(triggerLastUsed bool, descHandlers DescHandlers) *immutableRef {
-	ref := &immutableRef{
-		cacheRecord:     cr,
-		triggerLastUsed: triggerLastUsed,
-		descHandlers:    descHandlers,
-	}
-	cr.refs[ref] = struct{}{}
-	return ref
+type immutableRef struct {
+	*cacheRecord
+	triggerLastUsed bool
+	descHandlers    DescHandlers
 }
 
-// hold ref lock before calling
-func (cr *cacheRecord) mref(triggerLastUsed bool, descHandlers DescHandlers) *mutableRef {
-	ref := &mutableRef{
+var _ ImmutableRef = &immutableRef{}
+
+type mutableRef struct {
+	*cacheRecord
+	triggerLastUsed bool
+	descHandlers    DescHandlers
+}
+
+var _ MutableRef = &mutableRef{}
+
+// hold cacheRecord.mu before calling
+func (cr *cacheRecord) ref(triggerLastUsed bool, descHandlers DescHandlers) (*immutableRef, error) {
+	if cr.mutableRef != nil {
+		return nil, ErrLocked
+	}
+
+	r := &immutableRef{
 		cacheRecord:     cr,
 		triggerLastUsed: triggerLastUsed,
 		descHandlers:    descHandlers,
 	}
-	cr.refs[ref] = struct{}{}
-	return ref
+	cr.immutableRefs[r] = struct{}{}
+	return r, nil
+}
+
+// hold cacheRecord.mu lock before calling
+func (cr *cacheRecord) mref(triggerLastUsed bool, descHandlers DescHandlers) (*mutableRef, error) {
+	if cr.isFinalized {
+		return nil, errors.Wrap(errInvalid, "cannot get mutable ref of finalized cache record")
+	}
+	if cr.mutableRef != nil {
+		return nil, ErrLocked
+	}
+	if len(cr.immutableRefs) > 0 {
+		return nil, ErrLocked
+	}
+
+	r := &mutableRef{
+		cacheRecord:     cr,
+		triggerLastUsed: triggerLastUsed,
+		descHandlers:    descHandlers,
+	}
+	cr.mutableRef = r
+	return r, nil
+}
+
+// hold cacheRecord.mu lock before calling
+func (cr *cacheRecord) refCount() int {
+	count := len(cr.immutableRefs)
+	if cr.mutableRef != nil {
+		count++
+	}
+	return count
 }
 
 func (cr *cacheRecord) parentChain() []digest.Digest {
@@ -136,11 +177,6 @@ func (cr *cacheRecord) parentChain() []digest.Digest {
 	pcc[len(parent)] = digest.Digest(blob)
 	cr.parentChainCache = pcc
 	return pcc
-}
-
-// hold ref lock before calling
-func (cr *cacheRecord) isDead() bool {
-	return cr.dead || (cr.equalImmutable != nil && cr.equalImmutable.dead) || (cr.equalMutable != nil && cr.equalMutable.dead)
 }
 
 func (cr *cacheRecord) isLazy(ctx context.Context) (bool, error) {
@@ -183,9 +219,6 @@ func (cr *cacheRecord) Size(ctx context.Context) (int64, error) {
 			return s, nil
 		}
 		driverID := getSnapshotID(cr.md)
-		if cr.equalMutable != nil {
-			driverID = getSnapshotID(cr.equalMutable.md)
-		}
 		cr.mu.Unlock()
 		var usage snapshots.Usage
 		if !getBlobOnly(cr.md) {
@@ -193,7 +226,7 @@ func (cr *cacheRecord) Size(ctx context.Context) (int64, error) {
 			usage, err = cr.cm.ManagerOpt.Snapshotter.Usage(ctx, driverID)
 			if err != nil {
 				cr.mu.Lock()
-				isDead := cr.isDead()
+				isDead := cr.dead
 				cr.mu.Unlock()
 				if isDead {
 					return int64(0), nil
@@ -238,66 +271,8 @@ func (cr *cacheRecord) Size(ctx context.Context) (int64, error) {
 	return s.(int64), nil
 }
 
-func (cr *cacheRecord) parentRef(hidden bool, descHandlers DescHandlers) *immutableRef {
-	p := cr.parent
-	if p == nil {
-		return nil
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.ref(hidden, descHandlers)
-}
-
-// must be called holding cacheRecord mu
-func (cr *cacheRecord) mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
-	if cr.mutable {
-		m, err := cr.cm.Snapshotter.Mounts(ctx, getSnapshotID(cr.md))
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to mount %s", cr.ID())
-		}
-		if readonly {
-			m = setReadonly(m)
-		}
-		return m, nil
-	}
-
-	if cr.equalMutable != nil && readonly {
-		m, err := cr.cm.Snapshotter.Mounts(ctx, getSnapshotID(cr.equalMutable.md))
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to mount %s", cr.equalMutable.ID())
-		}
-		return setReadonly(m), nil
-	}
-
-	if err := cr.finalize(ctx); err != nil {
-		return nil, err
-	}
-	if cr.viewMount == nil { // TODO: handle this better
-		view := identity.NewID()
-		l, err := cr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-			l.ID = view
-			l.Labels = map[string]string{
-				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-			}
-			return nil
-		}, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-		ctx = leases.WithLease(ctx, l.ID)
-		m, err := cr.cm.Snapshotter.View(ctx, view, getSnapshotID(cr.md))
-		if err != nil {
-			cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: l.ID})
-			return nil, errors.Wrapf(err, "failed to mount %s", cr.ID())
-		}
-		cr.view = view
-		cr.viewMount = m
-	}
-	return cr.viewMount, nil
-}
-
 // call when holding the manager lock
-func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) error {
+func (cr *cacheRecord) remove(ctx context.Context) error {
 	delete(cr.cm.records, cr.ID())
 	if cr.parent != nil {
 		cr.parent.mu.Lock()
@@ -307,10 +282,8 @@ func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) error {
 			return err
 		}
 	}
-	if removeSnapshot {
-		if err := cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()}); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", cr.ID())
-		}
+	if err := cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()}); err != nil {
+		return errors.Wrapf(err, "failed to remove %s", cr.ID())
 	}
 	if err := cr.cm.md.Clear(cr.ID()); err != nil {
 		return err
@@ -322,30 +295,56 @@ func (cr *cacheRecord) ID() string {
 	return cr.md.ID()
 }
 
-type immutableRef struct {
-	*cacheRecord
-	triggerLastUsed bool
-	descHandlers    DescHandlers
-}
+// hold cacheRecord.mu lock before calling
+func (cr *cacheRecord) release(ctx context.Context, forceKeep bool) error {
+	if cr.refCount() > 0 {
+		return nil
+	}
 
-type mutableRef struct {
-	*cacheRecord
-	triggerLastUsed bool
-	descHandlers    DescHandlers
+	if cr.viewMount != nil { // TODO: release viewMount earlier if possible
+		if err := cr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: cr.view}); err != nil {
+			return errors.Wrapf(err, "failed to remove view lease %s", cr.view)
+		}
+		cr.view = ""
+		cr.viewMount = nil
+	}
+
+	if getCachePolicy(cr.md) == cachePolicyRetain {
+		return nil
+	}
+
+	if forceKeep {
+		return nil
+	}
+	return cr.remove(ctx)
 }
 
 func (sr *immutableRef) Clone() ImmutableRef {
 	sr.mu.Lock()
-	ref := sr.ref(false, sr.descHandlers)
-	sr.mu.Unlock()
-	return ref
+	defer sr.mu.Unlock()
+	return sr.clone(false)
+}
+
+// hold cacheRecord.mu lock before calling
+func (sr *immutableRef) clone(triggerLastUsed bool) ImmutableRef {
+	ir2 := &immutableRef{
+		cacheRecord:     sr.cacheRecord,
+		triggerLastUsed: triggerLastUsed,
+		descHandlers:    sr.descHandlers,
+	}
+	ir2.immutableRefs[ir2] = struct{}{}
+	return ir2
 }
 
 func (sr *immutableRef) Parent() ImmutableRef {
-	if p := sr.parentRef(true, sr.descHandlers); p != nil { // avoid returning typed nil pointer
-		return p
+	p := sr.parent
+	if p == nil {
+		return nil
 	}
-	return nil
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.clone(true)
 }
 
 func (sr *immutableRef) Info() RefInfo {
@@ -458,14 +457,52 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool, s session.Grou
 			rerr error
 		)
 		if err := sr.withRemoteSnapshotLabelsStargzMode(ctx, s, func() {
-			m, rerr = sr.mount(ctx, readonly)
+			m, rerr = sr.mount(ctx)
 		}); err != nil {
 			return nil, err
 		}
 		return m, rerr
 	}
 
-	return sr.mount(ctx, readonly)
+	// all mounts for immutable refs are read-only, so the readonly param is ignored here
+	return sr.mount(ctx)
+}
+
+// must be called holding cacheRecord mu
+func (sr *immutableRef) mount(ctx context.Context) (snapshot.Mountable, error) {
+	if !sr.isFinalized {
+		// if not finalized, there must be a mutable ref still around, return its mounts
+		// but set read-only
+		m, err := sr.cm.Snapshotter.Mounts(ctx, getSnapshotID(sr.md))
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to mount %s", sr.ID())
+		}
+		m = setReadonly(m)
+		return m, nil
+	}
+
+	if sr.viewMount == nil {
+		view := identity.NewID()
+		l, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+			l.ID = view
+			l.Labels = map[string]string{
+				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+			}
+			return nil
+		}, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+		ctx = leases.WithLease(ctx, l.ID)
+		m, err := sr.cm.Snapshotter.View(ctx, view, getSnapshotID(sr.md))
+		if err != nil {
+			sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: l.ID})
+			return nil, errors.Wrapf(err, "failed to mount %s", sr.ID())
+		}
+		sr.view = view
+		sr.viewMount = m
+	}
+	return sr.viewMount, nil
 }
 
 func (sr *immutableRef) Extract(ctx context.Context, s session.Group) (rerr error) {
@@ -734,47 +771,27 @@ func (sr *immutableRef) Release(ctx context.Context) error {
 	return sr.release(ctx)
 }
 
-func (sr *immutableRef) updateLastUsed() bool {
-	return sr.triggerLastUsed
-}
-
-func (sr *immutableRef) updateLastUsedNow() bool {
-	if !sr.triggerLastUsed {
-		return false
-	}
-	for r := range sr.refs {
-		if r.updateLastUsed() {
-			return false
-		}
-	}
-	return true
-}
-
+// hold cacheRecord.mu lock before calling
 func (sr *immutableRef) release(ctx context.Context) error {
-	delete(sr.refs, sr)
+	delete(sr.immutableRefs, sr)
 
-	if sr.updateLastUsedNow() {
-		updateLastUsed(sr.md)
-		if sr.equalMutable != nil {
-			sr.equalMutable.triggerLastUsed = true
-		}
-	}
-
-	if len(sr.refs) == 0 {
-		if sr.viewMount != nil { // TODO: release viewMount earlier if possible
-			if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.view}); err != nil {
-				return errors.Wrapf(err, "failed to remove view lease %s", sr.view)
+	doUpdateLastUsed := sr.triggerLastUsed
+	if doUpdateLastUsed {
+		for r := range sr.immutableRefs {
+			if r.triggerLastUsed {
+				doUpdateLastUsed = false
+				break
 			}
-			sr.view = ""
-			sr.viewMount = nil
 		}
-
-		if sr.equalMutable != nil {
-			sr.equalMutable.release(ctx)
+		if sr.mutableRef != nil && sr.mutableRef.triggerLastUsed {
+			doUpdateLastUsed = false
 		}
 	}
-
-	return nil
+	if doUpdateLastUsed {
+		updateLastUsed(sr.md)
+		sr.triggerLastUsed = false
+	}
+	return sr.cacheRecord.release(ctx, true)
 }
 
 func (sr *immutableRef) finalizeLocked(ctx context.Context) error {
@@ -788,102 +805,35 @@ func (cr *cacheRecord) Metadata() *metadata.StorageItem {
 }
 
 // caller must hold cacheRecord.mu
-func (cr *cacheRecord) finalize(ctx context.Context) error {
-	mutable := cr.equalMutable
-	if mutable == nil {
+func (sr *immutableRef) finalize(ctx context.Context) error {
+	if sr.isFinalized {
 		return nil
 	}
-
-	_, err := cr.cm.ManagerOpt.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = cr.ID()
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		if !errors.Is(err, errdefs.ErrAlreadyExists) { // migrator adds leases for everything
-			return errors.Wrap(err, "failed to create lease")
-		}
+	if sr.mutableRef != nil {
+		// can't commit the snapshot if someone still has an open mutable ref to it
+		return errors.Wrap(ErrLocked, "cannot finalize record with open mutable ref")
 	}
 
-	if err := cr.cm.ManagerOpt.LeaseManager.AddResource(ctx, leases.Lease{ID: cr.ID()}, leases.Resource{
-		ID:   cr.ID(),
-		Type: "snapshots/" + cr.cm.ManagerOpt.Snapshotter.Name(),
+	if err := sr.cm.ManagerOpt.LeaseManager.AddResource(ctx, leases.Lease{ID: sr.ID()}, leases.Resource{
+		ID:   sr.ID(),
+		Type: "snapshots/" + sr.cm.ManagerOpt.Snapshotter.Name(),
 	}); err != nil {
-		cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()})
-		return errors.Wrapf(err, "failed to add snapshot %s to lease", cr.ID())
+		sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: sr.ID()})
+		return errors.Wrapf(err, "failed to add snapshot %s to lease", sr.ID())
 	}
 
-	err = cr.cm.Snapshotter.Commit(ctx, cr.ID(), mutable.ID())
-	if err != nil {
-		cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()})
-		return errors.Wrapf(err, "failed to commit %s", mutable.ID())
-	}
-	mutable.dead = true
-	go func() {
-		cr.cm.mu.Lock()
-		defer cr.cm.mu.Unlock()
-		if err := mutable.remove(context.TODO(), true); err != nil {
-			logrus.Error(err)
-		}
-	}()
-
-	cr.equalMutable = nil
-	clearEqualMutable(cr.md)
-	return cr.md.Commit()
-}
-
-func (sr *mutableRef) updateLastUsed() bool {
-	return sr.triggerLastUsed
-}
-
-func (sr *mutableRef) commit(ctx context.Context) (*immutableRef, error) {
-	if !sr.mutable || len(sr.refs) == 0 {
-		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	if err := sr.cm.Snapshotter.Commit(ctx, sr.ID(), getSnapshotID(sr.md)); err != nil {
+		sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: sr.ID()})
+		return errors.Wrapf(err, "failed to commit %s", getSnapshotID(sr.md))
 	}
 
-	id := identity.NewID()
-	md, _ := sr.cm.md.Get(id)
-	rec := &cacheRecord{
-		mu:           sr.mu,
-		cm:           sr.cm,
-		parent:       sr.parentRef(false, sr.descHandlers),
-		equalMutable: sr,
-		refs:         make(map[ref]struct{}),
-		md:           md,
-	}
+	sr.isFinalized = true
+	queueSnapshotID(sr.md, sr.ID())
 
-	if descr := GetDescription(sr.md); descr != "" {
-		if err := queueDescription(md, descr); err != nil {
-			return nil, err
-		}
-	}
+	// If there is a hard-crash here, the old snapshot id written to metadata is no longer valid, but
+	// this situation is checked for and fixed in cacheManager.getRecord.
 
-	parentID := ""
-	if rec.parent != nil {
-		parentID = rec.parent.ID()
-	}
-	if err := initializeMetadata(rec, parentID); err != nil {
-		return nil, err
-	}
-
-	sr.cm.records[id] = rec
-
-	if err := sr.md.Commit(); err != nil {
-		return nil, err
-	}
-
-	queueCommitted(md)
-	setSize(md, sizeUnknown)
-	setEqualMutable(md, sr.ID())
-	if err := md.Commit(); err != nil {
-		return nil, err
-	}
-
-	ref := rec.ref(true, sr.descHandlers)
-	sr.equalImmutable = ref
-	return ref, nil
+	return sr.md.Commit()
 }
 
 func (sr *mutableRef) Mount(ctx context.Context, readonly bool, s session.Group) (snapshot.Mountable, error) {
@@ -906,6 +856,18 @@ func (sr *mutableRef) Mount(ctx context.Context, readonly bool, s session.Group)
 	return sr.mount(ctx, readonly)
 }
 
+// must be called holding cacheRecord mu
+func (sr *mutableRef) mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
+	m, err := sr.cm.Snapshotter.Mounts(ctx, getSnapshotID(sr.md))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to mount %s", sr.ID())
+	}
+	if readonly {
+		m = setReadonly(m)
+	}
+	return m, nil
+}
+
 func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	sr.cm.mu.Lock()
 	defer sr.cm.mu.Unlock()
@@ -913,7 +875,19 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	return sr.commit(ctx)
+	rec := sr.cacheRecord
+
+	ir := &immutableRef{
+		cacheRecord:  rec,
+		descHandlers: sr.descHandlers,
+	}
+	rec.immutableRefs[ir] = struct{}{}
+
+	if err := sr.release(ctx); err != nil {
+		delete(rec.immutableRefs, ir)
+		return nil, err
+	}
+	return ir, nil
 }
 
 func (sr *mutableRef) Release(ctx context.Context) error {
@@ -926,28 +900,15 @@ func (sr *mutableRef) Release(ctx context.Context) error {
 	return sr.release(ctx)
 }
 
+// hold cacheRecord.mu lock before calling
 func (sr *mutableRef) release(ctx context.Context) error {
-	delete(sr.refs, sr)
-	if getCachePolicy(sr.md) != cachePolicyRetain {
-		if sr.equalImmutable != nil {
-			if getCachePolicy(sr.equalImmutable.md) == cachePolicyRetain {
-				if sr.updateLastUsed() {
-					updateLastUsed(sr.md)
-					sr.triggerLastUsed = false
-				}
-				return nil
-			}
-			if err := sr.equalImmutable.remove(ctx, false); err != nil {
-				return err
-			}
-		}
-		return sr.remove(ctx, true)
-	}
-	if sr.updateLastUsed() {
+	sr.mutableRef = nil
+
+	if sr.triggerLastUsed {
 		updateLastUsed(sr.md)
 		sr.triggerLastUsed = false
 	}
-	return nil
+	return sr.cacheRecord.release(ctx, false)
 }
 
 func setReadonly(mounts snapshot.Mountable) snapshot.Mountable {
