@@ -5,24 +5,13 @@ set -e
 
 : ${PLATFORMS=linux/arm}
 
-importCacheFlags=""
-exportCacheFlags=""
-if [ "$GITHUB_ACTIONS" = "true" ]; then
-  if [ -n "$cacheRefFrom" ]; then
-    importCacheFlags="--cache-from=type=local,src=$cacheRefFrom"
-  fi
-  if [ -n "$cacheRefTo" ]; then
-    exportCacheFlags="--cache-to=type=local,dest=$cacheRefTo"
-  fi
-fi
-
 if [ -n "$RUNC_PLATFORMS" ]; then
-  buildxCmd build $importCacheFlags $exportCacheFlags \
+  buildxCmd build $cacheFromFlags $cacheToFlags \
     --target "binaries-linux-helper" \
     --platform "$RUNC_PLATFORMS" \
     $currentcontext
 fi
 
-buildxCmd build $importCacheFlags \
+buildxCmd build $cacheFromFlags \
   --platform "$PLATFORMS" \
   $currentcontext

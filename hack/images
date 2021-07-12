@@ -64,18 +64,16 @@ importCacheFlags=""
 for tagName in $tagNames; do
   importCacheFlags="$importCacheFlags--cache-from=type=registry,ref=$tagName "
 done
-if [[ -n "$cacheRefFrom" ]] && [[ "$cacheType" = "local" ]]; then
-  for ref in $cacheRefFrom; do
-    importCacheFlags="$importCacheFlags--cache-from=type=local,src=$ref "
-  done
+if [ -n "$cacheFromFlags" ]; then
+  importCacheFlags="$importCacheFlags$cacheFromFlags"
 fi
 if [ -n "$localmode" ]; then
   importCacheFlags=""
 fi
 
 exportCacheFlags=""
-if [[ -n "$cacheRefTo" ]] && [[ "$cacheType" = "local" ]]; then
-  exportCacheFlags="--cache-to=type=local,dest=$cacheRefTo "
+if [ -n "$cacheToFlags" ]; then
+  exportCacheFlags="$cacheToFlags"
 elif [ "$PUSH" = "push" ]; then
   exportCacheFlags="$exportCacheFlags--cache-to=type=inline "
 fi
