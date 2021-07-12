@@ -9,6 +9,7 @@ import (
 	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/moby/buildkit/client/connhelper"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc"
 )
 
 func init() {
@@ -17,17 +18,25 @@ func init() {
 
 // Helper returns helper for connecting to a Podman container.
 // Requires BuildKit v0.5.0 or later in the container.
-func Helper(u *url.URL) (*connhelper.ConnectionHelper, error) {
+func Helper(u *url.URL) (connhelper.ConnectionHelper, error) {
 	sp, err := SpecFromURL(u)
 	if err != nil {
 		return nil, err
 	}
-	return &connhelper.ConnectionHelper{
-		ContextDialer: func(ctx context.Context, addr string) (net.Conn, error) {
-			// using background context because context remains active for the duration of the process, after dial has completed
-			return commandconn.New(context.Background(), "podman", "exec", "-i", sp.Container, "buildctl", "dial-stdio")
-		},
-	}, nil
+	return &podmanHelper{sp}, nil
+}
+
+type podmanHelper struct {
+	sp *Spec
+}
+
+func (c *podmanHelper) ContextDialer(ctx context.Context, addr string) (net.Conn, error) {
+	// using background context because context remains active for the duration of the process, after dial has completed
+	return commandconn.New(context.Background(), "podman", "exec", "-i", c.sp.Container, "buildctl", "dial-stdio")
+}
+
+func (c *podmanHelper) DialOptions(addr string) ([]grpc.DialOption, error) {
+	return nil, nil
 }
 
 // Spec

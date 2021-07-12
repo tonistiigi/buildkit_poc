@@ -10,6 +10,7 @@ import (
 	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/moby/buildkit/client/connhelper"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc"
 )
 
 func init() {
@@ -18,18 +19,26 @@ func init() {
 
 // Helper returns helper for connecting to a Kubernetes pod.
 // Requires BuildKit v0.5.0 or later in the pod.
-func Helper(u *url.URL) (*connhelper.ConnectionHelper, error) {
+func Helper(u *url.URL) (connhelper.ConnectionHelper, error) {
 	sp, err := SpecFromURL(u)
 	if err != nil {
 		return nil, err
 	}
-	return &connhelper.ConnectionHelper{
-		ContextDialer: func(ctx context.Context, addr string) (net.Conn, error) {
-			// using background context because context remains active for the duration of the process, after dial has completed
-			return commandconn.New(context.Background(), "kubectl", "--context="+sp.Context, "--namespace="+sp.Namespace,
-				"exec", "--container="+sp.Container, "-i", sp.Pod, "--", "buildctl", "dial-stdio")
-		},
-	}, nil
+	return &kubepodHelper{sp}, nil
+}
+
+type kubepodHelper struct {
+	sp *Spec
+}
+
+func (c *kubepodHelper) ContextDialer(ctx context.Context, addr string) (net.Conn, error) {
+	// using background context because context remains active for the duration of the process, after dial has completed
+	return commandconn.New(context.Background(), "kubectl", "--context="+c.sp.Context, "--namespace="+c.sp.Namespace,
+		"exec", "--container="+c.sp.Container, "-i", c.sp.Pod, "--", "buildctl", "dial-stdio")
+}
+
+func (c *kubepodHelper) DialOptions(addr string) ([]grpc.DialOption, error) {
+	return nil, nil
 }
 
 // Spec

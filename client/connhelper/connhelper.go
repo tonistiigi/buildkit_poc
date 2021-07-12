@@ -6,19 +6,24 @@ import (
 	"context"
 	"net"
 	"net/url"
+
+	"google.golang.org/grpc"
 )
 
-var helpers = map[string]func(*url.URL) (*ConnectionHelper, error){}
+var helpers = map[string]func(*url.URL) (ConnectionHelper, error){}
 
 // ConnectionHelper allows to connect to a remote host with custom stream provider binary.
-type ConnectionHelper struct {
+type ConnectionHelper interface {
 	// ContextDialer can be passed to grpc.WithContextDialer
-	ContextDialer func(ctx context.Context, addr string) (net.Conn, error)
+	ContextDialer(ctx context.Context, addr string) (net.Conn, error)
+
+	// DialOptions can be passed to grpc.DialContext
+	DialOptions(addr string) ([]grpc.DialOption, error)
 }
 
 // GetConnectionHelper returns BuildKit-specific connection helper for the given URL.
 // GetConnectionHelper returns nil without error when no helper is registered for the scheme.
-func GetConnectionHelper(daemonURL string) (*ConnectionHelper, error) {
+func GetConnectionHelper(daemonURL string) (ConnectionHelper, error) {
 	u, err := url.Parse(daemonURL)
 	if err != nil {
 		return nil, err
@@ -33,6 +38,6 @@ func GetConnectionHelper(daemonURL string) (*ConnectionHelper, error) {
 }
 
 // Register registers new connectionhelper for scheme
-func Register(scheme string, fn func(*url.URL) (*ConnectionHelper, error)) {
+func Register(scheme string, fn func(*url.URL) (ConnectionHelper, error)) {
 	helpers[scheme] = fn
 }

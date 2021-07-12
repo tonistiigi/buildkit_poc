@@ -6,10 +6,18 @@ import (
 	"strings"
 
 	winio "github.com/Microsoft/go-winio"
+	"github.com/moby/buildkit/client/connhelper"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc"
 )
 
-func dialer(ctx context.Context, address string) (net.Conn, error) {
+func defaultConnhelper() connhelper.ConnectionHelper {
+	return &platformConnhelper{}
+}
+
+type platformConnhelper struct{}
+
+func (c *platformConnhelper) ContextDialer(ctx context.Context, address string) (net.Conn, error) {
 	addrParts := strings.SplitN(address, "://", 2)
 	if len(addrParts) != 2 {
 		return nil, errors.Errorf("invalid address %s", address)
@@ -22,4 +30,8 @@ func dialer(ctx context.Context, address string) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, addrParts[0], addrParts[1])
 	}
+}
+
+func (c *platformConnhelper) DialOptions(addr string) ([]grpc.DialOption, error) {
+	return nil, nil
 }
